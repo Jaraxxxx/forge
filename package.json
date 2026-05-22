@@ -1,34 +1,50 @@
 {
   "name": "forge",
   "version": "0.1.0",
-  "description": "AI-first coding agent harness — model-agnostic, context-intelligent, self-improving",
+  "description": "AI-first coding agent harness — model-agnostic, context-intelligent, self-improving. CLI + Web app.",
   "type": "module",
   "main": "src/index.ts",
   "bin": {
     "forge": "./bin/forge.js"
   },
+  "files": [
+    "src/",
+    "bin/",
+    "tsconfig.json",
+    "README.md"
+  ],
   "scripts": {
     "dev": "tsx src/index.ts",
     "web": "tsx src/index.ts web",
     "typecheck": "tsc --noEmit",
     "lint": "biome check src/",
-    "format": "biome format --write src/"
+    "format": "biome format --write src/",
+    "prepublishOnly": "npm run typecheck"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   },
   "keywords": [
     "ai",
     "agent",
+    "coding-agent",
     "claude-code",
-    "pi",
-    "codex",
-    "coding-agent"
+    "cli",
+    "webapp"
   ],
-  "license": "MIT",
-  "devDependencies": {
-    "@biomejs/biome": "^1.9.0",
-    "@types/express": "^5.0.6",
-    "tsx": "^4.0.0",
-    "typescript": "^5.5.0"
+  "author": {
+    "name": "Jay Rathod",
+    "url": "https://github.com/Jaraxxxx"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Jaraxxxx/forge"
+  },
+  "bugs": {
+    "url": "https://github.com/Jaraxxxx/forge/issues"
+  },
+  "homepage": "https://github.com/Jaraxxxx/forge#readme",
+  "license": "MIT",
   "dependencies": {
     "@anthropic-ai/sdk": "^0.40.0",
     "@google/generative-ai": "^0.24.0",
@@ -36,6 +52,12 @@
     "express": "^5.2.1",
     "jiti": "^2.0.0",
     "openai": "^5.0.0",
-    "terminal-kit": "^3.1.0"
+    "terminal-kit": "^3.1.0",
+    "tsx": "^4.0.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.0",
+    "@types/express": "^5.0.6",
+    "typescript": "^5.5.0"
   }
 }
