@@ -1,5 +1,5 @@
 {
-  "name": "forge",
+  "name": "@jaraxxxx/forge",
   "version": "0.1.0",
   "description": "AI-first coding agent harness — model-agnostic, context-intelligent, self-improving. CLI + Web app.",
   "type": "module",
@@ -18,8 +18,7 @@
     "web": "tsx src/index.ts web",
     "typecheck": "tsc --noEmit",
     "lint": "biome check src/",
-    "format": "biome format --write src/",
-    "prepublishOnly": "npm run typecheck"
+    "format": "biome format --write src/"
   },
   "engines": {
     "node": ">=18.0.0"
