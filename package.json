@@ -9,23 +9,33 @@
   },
   "scripts": {
     "dev": "tsx src/index.ts",
+    "web": "tsx src/index.ts web",
     "typecheck": "tsc --noEmit",
     "lint": "biome check src/",
     "format": "biome format --write src/"
   },
-  "keywords": ["ai", "agent", "claude-code", "pi", "codex", "coding-agent"],
+  "keywords": [
+    "ai",
+    "agent",
+    "claude-code",
+    "pi",
+    "codex",
+    "coding-agent"
+  ],
   "license": "MIT",
   "devDependencies": {
-    "typescript": "^5.5.0",
+    "@biomejs/biome": "^1.9.0",
+    "@types/express": "^5.0.6",
     "tsx": "^4.0.0",
-    "@biomejs/biome": "^1.9.0"
+    "typescript": "^5.5.0"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.40.0",
-    "openai": "^5.0.0",
     "@google/generative-ai": "^0.24.0",
-    "terminal-kit": "^3.1.0",
     "better-sqlite3": "^11.0.0",
-    "jiti": "^2.0.0"
+    "express": "^5.2.1",
+    "jiti": "^2.0.0",
+    "openai": "^5.0.0",
+    "terminal-kit": "^3.1.0"
   }
 }

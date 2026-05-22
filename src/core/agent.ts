@@ -79,6 +79,8 @@ export interface AgentLoopOptions {
   maxTurns?: number;
   signal?: AbortSignal;
   onText?: (text: string) => void;
+  onToolCall?: (toolCallId: string, name: string, args: Record<string, unknown>) => void;
+  onToolResult?: (toolCallId: string, content: string, isError: boolean) => void;
 }
 
 export async function* agentLoop(
@@ -179,6 +181,10 @@ export async function* agentLoop(
     // Execute tools (parallel for independent calls)
     const toolResults: ToolResultMessage[] = [];
     const executions = toolCalls.map(async (tc) => {
+      // Notify listeners
+      if (options.onToolCall) {
+        options.onToolCall(tc.id, tc.name, tc.arguments);
+      }
       const tool = tools.find((t) => t.name === tc.name);
       if (!tool) {
         return {
@@ -219,6 +225,14 @@ export async function* agentLoop(
 
     const results = await Promise.all(executions);
     for (const r of results) {
+      // Notify listeners of results
+      const resultText = Array.isArray(r.content)
+        ? r.content.filter((c: any) => c.type === "text").map((c: any) => c.text).join("\n")
+        : String(r.content ?? "");
+      if (options.onToolResult) {
+        options.onToolResult(r.toolCallId, resultText.slice(0, 2000), r.isError ?? false);
+      }
+
       messages.push(r as any);
       history.push(r as any);
       toolResults.push(r as unknown as ToolResultMessage);

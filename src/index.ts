@@ -1,11 +1,12 @@
 /**
- * Forge — CLI Entry Point
+ * Forge — Unified CLI Entry Point
  *
- * Minimal TUI powered by terminal-kit. Reads user input,
- * streams LLM responses, renders tool calls inline.
+ * Usage:
+ *   forge              → interactive CLI mode
+ *   forge "prompt"     → one-shot CLI mode
+ *   forge web [port]   → start webapp server (default :4200)
  *
- * Usage: forge [prompt]
- *        forge           (interactive)
+ * Both CLI and Web use the exact same agentLoop core.
  */
 
 import * as readline from "readline";
@@ -18,6 +19,7 @@ import {
 } from "./providers/registry.js";
 import { agentLoop, setProvider } from "./core/agent.js";
 import { DEFAULT_TOOLS } from "./tools/builtin.js";
+import { startServer } from "./server/index.js";
 import type { Message } from "./core/types.js";
 
 // ─── System Prompt ────────────────────────────────────
@@ -52,11 +54,8 @@ function accent(text: string): string {
 
 // ─── CLI ──────────────────────────────────────────────
 
-async function main(): Promise<void> {
-  // Auto-discover providers from env
+async function runCLI(initialPrompt: string): Promise<void> {
   const registry = ProviderRegistry.autoDiscover();
-
-  // Default to Anthropic if available
   const provider = registry.get("anthropic") ??
     registry.get("openai") ??
     registry.get("google");
@@ -68,9 +67,7 @@ async function main(): Promise<void> {
 
   setProvider(provider);
 
-  const args = process.argv.slice(2);
-  const initialPrompt = args.join(" ");
-
+  // ─── Non-interactive (one-shot) ────────────────────
   if (initialPrompt) {
     // Non-interactive: one-shot
     const history: Message[] = [];
@@ -86,7 +83,7 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
-  // Interactive mode
+  // ─── Interactive mode ────────────────────────────
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
@@ -134,6 +131,23 @@ async function main(): Promise<void> {
   }
 
   prompt();
+}
+
+// ─── Main Entry ────────────────────────────────────
+
+async function main(): Promise<void> {
+  const args = process.argv.slice(2);
+
+  // "forge web [port]" — start web server
+  if (args[0] === "web") {
+    const port = parseInt(args[1] || process.env.FORGE_PORT || "4200", 10);
+    startServer(port);
+    return;
+  }
+
+  // "forge" or "forge <prompt>" — CLI mode
+  const initialPrompt = args.join(" ");
+  await runCLI(initialPrompt);
 }
 
 main().catch((e) => {
