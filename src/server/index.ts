@@ -409,11 +409,24 @@ function renderModelDropdown(){
   }
   _e('modelDropdown').innerHTML = html;
 }
+function pickModel(id){
+  st.model = id;
+  updateModelDisplay();
+  _e('modelDropdown').classList.remove('visible');
+  _e('modelArrow').classList.remove('open');
+  updateStatusBar();
+}
 _e('modelDropdown').addEventListener('click', function(e){
   const card = e.target.closest('.model-card');
   if(!card) return;
   const id = card.getAttribute('data-model');
   if(id) pickModel(id);
+});
+document.addEventListener('click', function(e){
+  if(!e.target.closest('.model-selector')){
+    _e('modelDropdown').classList.remove('visible');
+    _e('modelArrow').classList.remove('open');
+  }
 });
 
 // ─── Sidebar ──────────────────────────────────────────
@@ -697,6 +710,13 @@ export function createApp(): express.Express {
 
     try {
       let totalInput = 0, totalOutput = 0;
+
+      // Add user message to session history (agentLoop only appends assistant/tool msgs)
+      session.history.push({
+        role: "user",
+        content: [{ type: "text", text: message }],
+        timestamp: Date.now(),
+      } as any);
 
       for await (const chunk of agentLoop(message, session.history, {
         provider,
