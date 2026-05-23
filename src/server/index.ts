@@ -15,7 +15,7 @@ import {
 } from "../providers/registry.js";
 import { agentLoop } from "../core/agent.js";
 import { DEFAULT_TOOLS } from "../tools/builtin.js";
-import type { Message, SessionEntry, Session } from "./core/types.js";
+import type { Message } from "../core/types.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -29,7 +29,7 @@ mkdirSync(SESSIONS_DIR, { recursive: true });
 interface ServerSession {
   id: string;
   history: Message[];
-  entries: SessionEntry[];
+  entries: any[];
   leafId: string;
   createdAt: number;
   updatedAt: number;
@@ -91,7 +91,7 @@ const WEBAPP_HTML = `<!DOCTYPE html>
 <title>Forge — AI Coding Agent</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -101,76 +101,106 @@ const WEBAPP_HTML = `<!DOCTYPE html>
   --green:#22c55e;--green-muted:rgba(34,197,94,0.12);
   --yellow:#eab308;--yellow-muted:rgba(234,179,8,0.12);
   --red:#ef4444;--red-muted:rgba(239,68,68,0.12);
-  --orange:#f97316;--cyan:#06b6d4;--purple:#a855f7;
+  --cyan:#06b6d4;--purple:#a855f7;--orange:#f97316;
   --radius-sm:6px;--radius-md:8px;--radius-lg:12px;--radius-full:9999px;
   --font:'Inter',-apple-system,BlinkMacSystemFont,sans-serif;
   --mono:'JetBrains Mono','SF Mono','Fira Code',monospace;
 }
 html,body{height:100%;overflow:hidden}
-body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:13px;line-height:1.6;display:flex}
+body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:13px;line-height:1.6;display:flex;flex-direction:column}
 ::-webkit-scrollbar{width:6px;height:6px}
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
 ::-webkit-scrollbar-thumb:hover{background:var(--border-strong)}
 
-/* ─── Sidebar ─── */
-.sidebar{width:260px;min-width:260px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;z-index:20;transition:transform .2s ease,min-width .2s ease,width .2s ease}
-.sidebar.collapsed{transform:translateX(-100%);min-width:0;width:0;overflow:hidden}
-.sidebar-header{display:flex;align-items:center;justify-content:space-between;padding:16px;border-bottom:1px solid var(--border)}
-.sidebar-logo{display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px;color:var(--accent);cursor:pointer;letter-spacing:-0.01em}
-.sidebar-logo svg{width:22px;height:22px}
-.sidebar-toggle{background:none;border:none;color:var(--text-muted);cursor:pointer;padding:4px;border-radius:var(--radius-sm);display:flex;align-items:center}
-.sidebar-toggle:hover{color:var(--text);background:var(--elevated)}
-.new-chat-btn{margin:12px;display:flex;align-items:center;justify-content:center;gap:8px;padding:10px 16px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius-md);font-size:13px;font-weight:600;cursor:pointer;transition:background .15s;font-family:var(--font)}
-.new-chat-btn:hover{background:var(--accent-hover)}
-.sessions-list{flex:1;overflow-y:auto;padding:8px}
-.session-item{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:var(--radius-sm);cursor:pointer;color:var(--text-muted);font-size:12px;transition:all .12s;margin-bottom:2px}
+/* ─── Top Bar ─── */
+.topbar{display:flex;align-items:center;justify-content:space-between;height:48px;padding:0 16px;background:var(--surface);border-bottom:1px solid var(--border);flex-shrink:0;gap:12px}
+.logo{display:flex;align-items:center;gap:8px;font-weight:700;font-size:16px;color:var(--accent);letter-spacing:-0.02em;cursor:pointer}
+.logo svg{width:22px;height:22px}
+.model-selector{position:relative}
+.model-current{display:flex;align-items:center;gap:8px;padding:6px 14px;background:var(--elevated);border:1px solid var(--border-strong);border-radius:var(--radius-md);cursor:pointer;font-size:12px;transition:all .15s;white-space:nowrap;min-width:200px;justify-content:space-between}
+.model-current:hover{border-color:var(--accent);background:var(--accent-muted)}
+.model-current-name{font-weight:600;color:var(--text);font-size:12px}
+.model-current-provider{font-size:10px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.05em}
+.model-current-arrow{font-size:10px;color:var(--text-dim);transition:transform .15s}
+.model-current-arrow.open{transform:rotate(180deg)}
+.model-dropdown{display:none;position:absolute;top:calc(100% + 4px);right:0;width:340px;max-height:420px;overflow-y:auto;background:var(--surface);border:1px solid var(--border-strong);border-radius:var(--radius-md);z-index:100;box-shadow:0 16px 40px rgba(0,0,0,.6)}
+.model-dropdown.visible{display:block}
+.model-dropdown .group-header{padding:8px 12px;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-dim);position:sticky;top:0;background:var(--surface);border-bottom:1px solid var(--border);z-index:1}
+.model-dropdown .model-card{padding:10px 12px;cursor:pointer;display:flex;align-items:center;gap:10px;transition:background .1s;border-left:3px solid transparent}
+.model-dropdown .model-card:hover{background:var(--elevated)}
+.model-dropdown .model-card.selected{background:var(--accent-muted);border-left-color:var(--accent)}
+.model-dropdown .model-card .mc-badge{width:36px;height:36px;border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+.model-dropdown .model-card .mc-badge.anthropic{background:rgba(212,137,106,.15);color:#d4896a}
+.model-dropdown .model-card .mc-badge.openai{background:rgba(116,166,139,.15);color:#74a68b}
+.model-dropdown .model-card .mc-badge.deepseek{background:rgba(99,102,241,.15);color:var(--accent)}
+.model-dropdown .model-card .mc-badge.google{background:rgba(66,133,244,.15);color:#4285f4}
+.model-dropdown .model-card .mc-badge.moonshot{background:rgba(168,85,247,.15);color:var(--purple)}
+.model-dropdown .model-card .mc-badge.minimax{background:rgba(6,182,212,.15);color:var(--cyan)}
+.model-dropdown .model-card .mc-badge.alibaba{background:rgba(249,115,22,.15);color:var(--orange)}
+.model-dropdown .model-card .mc-badge.meta{background:rgba(59,130,246,.15);color:#3b82f6}
+.model-dropdown .model-card .mc-info{flex:1;min-width:0}
+.model-dropdown .model-card .mc-name{font-weight:600;font-size:13px;color:var(--text)}
+.model-dropdown .model-card .mc-desc{font-size:11px;color:var(--text-dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.model-dropdown .model-card .mc-check{color:var(--accent);font-size:14px;opacity:0}
+.model-dropdown .model-card.selected .mc-check{opacity:1}
+
+.topbar-right{display:flex;align-items:center;gap:12px}
+.topbar-pill{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:var(--radius-full);font-size:11px;background:var(--elevated);color:var(--text-muted);border:1px solid var(--border);font-family:var(--mono)}
+.dot{width:6px;height:6px;border-radius:50%}
+.dot.green{background:var(--green)}
+.dot.yellow{background:var(--yellow)}
+.dot.red{background:var(--red)}
+
+/* ─── Main Layout ─── */
+.layout{display:flex;flex:1;min-height:0}
+.sidebar{width:260px;min-width:260px;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;transition:all .2s ease;overflow:hidden}
+.sidebar.collapsed{min-width:0;width:0}
+.sidebar-header{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.sidebar-title{font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em}
+.new-session-btn{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;padding:8px;margin:12px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius-md);font-size:12px;font-weight:600;cursor:pointer;transition:background .15s;font-family:var(--font)}
+.new-session-btn:hover{background:var(--accent-hover)}
+.sessions-list{flex:1;overflow-y:auto;padding:4px 8px}
+.session-item{display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:var(--radius-sm);cursor:pointer;color:var(--text-muted);font-size:12px;transition:all .1s;margin-bottom:1px}
 .session-item:hover{background:var(--elevated);color:var(--text)}
 .session-item.active{background:var(--accent-muted);color:var(--accent-hover)}
-.session-item .s-title{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.session-item .s-date{font-size:10px;color:var(--text-dim);font-family:var(--mono)}
-.session-item .s-model{font-size:9px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.05em}
+.session-item .stitle{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.session-item .sdate{font-size:10px;color:var(--text-dim);font-family:var(--mono)}
+.session-item .smodel{font-size:9px;color:var(--text-dim);text-transform:uppercase;letter-spacing:.03em}
 
-/* ─── Main ─── */
-.main{flex:1;display:flex;flex-direction:column;min-width:0;position:relative}
-.toolbar{display:flex;align-items:center;justify-content:space-between;padding:0 16px;height:44px;border-bottom:1px solid var(--border);background:var(--surface);gap:8px}
-.toolbar-left{display:flex;align-items:center;gap:8px}
-.toolbar-right{display:flex;align-items:center;gap:4px}
-.btn-icon{display:flex;align-items:center;justify-content:center;width:32px;height:32px;background:none;border:none;border-radius:var(--radius-sm);color:var(--text-muted);cursor:pointer;transition:all .12s}
-.btn-icon:hover{color:var(--text);background:var(--elevated)}
-.pill{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:var(--radius-full);font-size:11px;font-weight:500;background:var(--elevated);color:var(--text-muted);border:1px solid var(--border)}
-.pill.active{background:var(--accent-muted);color:var(--accent-hover);border-color:var(--accent)}
-.pill .dot{width:6px;height:6px;border-radius:50%}
-.pill .dot.green{background:var(--green)}
-.pill .dot.yellow{background:var(--yellow)}
-.pill .dot.accent{background:var(--accent)}
-.model-select{background:var(--elevated);color:var(--text);border:1px solid var(--border);border-radius:var(--radius-sm);padding:4px 8px;font-size:11px;font-family:var(--mono);cursor:pointer;outline:none;max-width:280px}
-.model-select:focus{border-color:var(--accent)}
-.model-select option{background:var(--surface);color:var(--text);font-size:12px}
+/* ─── Chat Area ─── */
+.chat-area{flex:1;display:flex;flex-direction:column;min-width:0;background:var(--bg)}
+.messages{flex:1;overflow-y:auto;padding:20px 0;scroll-behavior:smooth}
 
-/* ─── Messages ─── */
-.messages{flex:1;overflow-y:auto;padding:16px 0;scroll-behavior:smooth}
-.empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--text-dim);text-align:center;gap:12px}
-.empty-icon{font-size:48px;opacity:.4}
-.empty-title{font-size:16px;font-weight:600;color:var(--text-muted)}
-.empty-sub{font-size:13px;max-width:320px;line-height:1.5}
-.message{padding:0 16px;max-width:860px;margin:0 auto;width:100%;margin-bottom:16px;animation:fadeIn .2s ease}
+/* Welcome screen */
+.welcome{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;text-align:center;padding:40px;gap:24px}
+.welcome-icon{font-size:56px;opacity:.3;margin-bottom:4px}
+.welcome-title{font-size:22px;font-weight:700;color:var(--text);letter-spacing:-0.02em}
+.welcome-subtitle{font-size:14px;color:var(--text-muted);max-width:400px;line-height:1.6}
+.welcome-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px;max-width:700px;width:100%;margin-top:12px}
+.welcome-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);padding:16px;text-align:left;cursor:pointer;transition:all .15s}
+.welcome-card:hover{border-color:var(--accent);background:var(--elevated)}
+.welcome-card-icon{font-size:20px;margin-bottom:8px}
+.welcome-card-title{font-size:13px;font-weight:600;color:var(--text);margin-bottom:4px}
+.welcome-card-desc{font-size:11px;color:var(--text-dim);line-height:1.5}
+
+/* Messages */
+.message{padding:0 20px;max-width:860px;margin:0 auto;width:100%;margin-bottom:16px;animation:fadeIn .2s ease}
 @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:translateY(0)}}
 .message.user{display:flex;justify-content:flex-end}
-.message.user .bubble{background:var(--elevated);color:var(--text);border:1px solid var(--border);border-radius:var(--radius-lg);border-bottom-right-radius:var(--radius-sm);padding:10px 14px;max-width:85%;font-size:13px}
+.message.user .bubble{background:var(--elevated);color:var(--text);border:1px solid var(--border);border-radius:var(--radius-lg);border-bottom-right-radius:4px;padding:10px 14px;max-width:80%;font-size:13px;line-height:1.6}
 .message.assistant{display:flex;gap:10px}
-.message.assistant .avatar{width:28px;height:28px;border-radius:var(--radius-sm);background:var(--accent-muted);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
-.message.assistant .bubble{flex:1;min-width:0;font-size:13px;line-height:1.7}
-.message.assistant .bubble p{margin-bottom:8px}
-.message.assistant .bubble pre{background:#0d0d10;border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;overflow-x:auto;font-family:var(--mono);font-size:12px;line-height:1.5;margin:8px 0}
-.message.assistant .bubble code{font-family:var(--mono);font-size:12px;background:rgba(255,255,255,0.05);padding:1px 4px;border-radius:3px}
-.message.assistant .bubble pre code{background:none;padding:0}
+.message.assistant .avatar{width:28px;height:28px;border-radius:var(--radius-sm);background:var(--accent-muted);color:var(--accent);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;font-weight:700}
+.message.assistant .content{flex:1;min-width:0;font-size:13px;line-height:1.7}
+.message.assistant .content p{margin-bottom:8px}
+.message.assistant .content pre{background:#0d0d10;border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;overflow-x:auto;font-family:var(--mono);font-size:12px;line-height:1.5;margin:8px 0}
+.message.assistant .content code{font-family:var(--mono);font-size:12px;background:rgba(255,255,255,0.04);padding:1px 4px;border-radius:3px}
+.message.assistant .content pre code{background:none;padding:0}
 
-/* ─── Tool Cards ─── */
+/* Tool cards */
 .tool-card{border:1px solid var(--border);border-radius:var(--radius-md);margin:8px 0;overflow:hidden;background:var(--surface)}
 .tool-card-header{display:flex;align-items:center;gap:8px;padding:8px 12px;cursor:pointer;user-select:none;transition:background .12s;font-size:12px}
 .tool-card-header:hover{background:var(--elevated)}
-.tool-card-header .tool-icon{font-size:14px}
 .tool-card-header .tool-name{font-weight:600;color:var(--cyan);font-family:var(--mono);font-size:11px}
 .tool-card-header .tool-args{color:var(--text-dim);font-family:var(--mono);font-size:11px;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .tool-card-header .tool-status{font-size:10px;padding:2px 6px;border-radius:var(--radius-full)}
@@ -180,270 +210,217 @@ body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:13
 .tool-card-body{padding:10px 12px;border-top:1px solid var(--border);font-family:var(--mono);font-size:11px;line-height:1.5;color:var(--text-muted);max-height:200px;overflow-y:auto;background:#0a0a0d;display:none}
 .tool-card.expanded .tool-card-body{display:block}
 
-.streaming-cursor{display:inline-block;width:8px;height:16px;background:var(--accent);margin-left:2px;animation:blink 1s infinite;vertical-align:text-bottom;border-radius:1px}
+.stream-cursor{display:inline-block;width:8px;height:14px;background:var(--accent);margin-left:1px;animation:blink 1s infinite;vertical-align:middle;border-radius:1px}
 @keyframes blink{0%,50%{opacity:1}51%,100%{opacity:0}}
 
-/* ─── Input ─── */
-.input-area{padding:12px 16px;border-top:1px solid var(--border);background:var(--surface)}
-.input-wrapper{display:flex;gap:8px;align-items:flex-end;max-width:860px;margin:0 auto}
+/* Input */
+.input-area{padding:12px 20px 16px;border-top:1px solid var(--border);background:var(--bg);flex-shrink:0}
+.input-bar{display:flex;gap:8px;align-items:flex-end;max-width:860px;margin:0 auto}
 .input-box{flex:1;background:var(--elevated);border:1px solid var(--border);border-radius:var(--radius-md);padding:10px 14px;color:var(--text);font-family:var(--font);font-size:13px;resize:none;outline:none;line-height:1.5;max-height:200px;transition:border-color .15s}
 .input-box:focus{border-color:var(--accent)}
 .input-box::placeholder{color:var(--text-dim)}
-.send-btn{display:flex;align-items:center;justify-content:center;width:36px;height:36px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius-sm);cursor:pointer;transition:background .15s;flex-shrink:0}
+.send-btn{display:flex;align-items:center;justify-content:center;width:38px;height:38px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius-sm);cursor:pointer;transition:background .15s;flex-shrink:0}
 .send-btn:hover{background:var(--accent-hover)}
-.send-btn:disabled{opacity:.5;cursor:not-allowed}
-.stop-btn{display:flex;align-items:center;justify-content:center;width:36px;height:36px;background:var(--red-muted);color:var(--red);border:1px solid var(--red);border-radius:var(--radius-sm);cursor:pointer;font-size:11px;font-weight:600;flex-shrink:0}
+.send-btn:disabled{opacity:.4;cursor:not-allowed}
+.stop-btn{display:flex;align-items:center;justify-content:center;width:38px;height:38px;background:var(--red-muted);color:var(--red);border:1px solid rgba(239,68,68,.3);border-radius:var(--radius-sm);cursor:pointer;font-size:12px;font-weight:700;flex-shrink:0}
 
-/* ─── Status Bar ─── */
-.status-bar{display:flex;align-items:center;justify-content:space-between;height:32px;padding:0 12px;border-top:1px solid var(--border);background:var(--surface);font-size:11px;color:var(--text-muted);gap:8px;flex-shrink:0}
-.status-left,.status-right{display:flex;align-items:center;gap:12px}
-.status-item{display:flex;align-items:center;gap:4px;white-space:nowrap}
-.status-label{color:var(--text-dim);font-size:10px;text-transform:uppercase;letter-spacing:.05em}
+/* Status bar */
+.status-bar{display:flex;align-items:center;justify-content:space-between;height:30px;padding:0 16px;background:var(--surface);border-top:1px solid var(--border);font-size:11px;color:var(--text-muted);gap:12px;flex-shrink:0}
+.status-left,.status-right{display:flex;align-items:center;gap:14px}
+.status-item{display:flex;align-items:center;gap:5px;white-space:nowrap}
+.status-label{color:var(--text-dim);font-size:10px;text-transform:uppercase;letter-spacing:.04em}
 .status-value{font-family:var(--mono);font-size:11px}
-.status-value.green{color:var(--green)}
-.status-value.yellow{color:var(--yellow)}
-.status-value.red{color:var(--red)}
-.context-bar{width:100px;height:4px;background:var(--border);border-radius:2px;overflow:hidden}
-.context-bar-fill{height:100%;border-radius:2px;transition:width .3s ease,background .3s ease}
-.context-bar-fill.safe{background:var(--green)}
-.context-bar-fill.warn{background:var(--yellow)}
-.context-bar-fill.danger{background:var(--red)}
-.model-pill{cursor:pointer;position:relative}
-.model-dropdown{display:none;position:absolute;bottom:100%;right:0;margin-bottom:4px;background:var(--elevated);border:1px solid var(--border-strong);border-radius:var(--radius-md);min-width:260px;max-height:320px;overflow-y:auto;z-index:50;box-shadow:0 8px 24px rgba(0,0,0,.5)}
-.model-dropdown.visible{display:block}
-.model-dropdown .md-header{padding:8px 10px;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-dim);position:sticky;top:0;background:var(--elevated);border-bottom:1px solid var(--border)}
-.model-dropdown .md-item{padding:6px 10px;cursor:pointer;display:flex;align-items:center;gap:8px;font-size:12px;transition:background .1s}
-.model-dropdown .md-item:hover{background:var(--accent-muted)}
-.model-dropdown .md-item.active{color:var(--accent-hover);background:var(--accent-muted)}
-.model-dropdown .md-item .md-name{flex:1}
-.model-dropdown .md-item .md-desc{font-size:10px;color:var(--text-dim)}
+.status-value.g{color:var(--green)}.status-value.y{color:var(--yellow)}.status-value.r{color:var(--red)}
+.ctx-bar{width:80px;height:4px;background:var(--border);border-radius:2px;overflow:hidden}
+.ctx-fill{height:100%;border-radius:2px;transition:width .3s}
+.ctx-fill.s{background:var(--green)}.ctx-fill.w{background:var(--yellow)}.ctx-fill.d{background:var(--red)}
 
-/* ─── Mobile Toggle ─── */
-.mobile-toggle{display:none;position:fixed;top:12px;left:12px;z-index:30;width:36px;height:36px;align-items:center;justify-content:center;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius-md);color:var(--text);cursor:pointer}
 @media(max-width:768px){
-  .sidebar{position:fixed;top:0;left:0;bottom:0;transform:translateX(-100%)}
+  .sidebar{position:fixed;top:48px;left:0;bottom:0;z-index:20;transform:translateX(-100%)}
   .sidebar.open{transform:translateX(0)}
-  .mobile-toggle{display:flex}
-  .main{margin-left:0}
-  .message{padding:0 12px}
-  .model-select{max-width:180px}
+  .model-dropdown{position:fixed;top:52px;right:8px;left:8px;width:auto;max-height:60vh}
+  .welcome-cards{grid-template-columns:1fr}
 }
 </style>
 </head>
 <body>
 
-<!-- Sidebar -->
-<aside class="sidebar" id="sidebar">
-  <div class="sidebar-header">
-    <div class="sidebar-logo">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
-      Forge
-    </div>
-    <button class="sidebar-toggle" onclick="toggleSidebar()" title="Toggle sidebar">☰</button>
+<!-- Top Bar -->
+<div class="topbar">
+  <div class="logo" onclick="newSession()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+    Forge
   </div>
-  <button class="new-chat-btn" onclick="newSession()">
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-    New Session
-  </button>
-  <div class="sessions-list" id="sessionsList"></div>
-</aside>
-
-<!-- Mobile Toggle -->
-<button class="mobile-toggle" onclick="toggleSidebar()">☰</button>
-
-<!-- Main -->
-<div class="main">
-  <!-- Toolbar -->
-  <div class="toolbar">
-    <div class="toolbar-left">
-      <button class="btn-icon" onclick="toggleSidebar()" title="Toggle sidebar">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="9" y1="3" x2="9" y2="21"/></svg>
-      </button>
-      <span style="font-weight:600;font-size:13px;color:var(--text-muted)" id="sessionTitle">New Session</span>
+  <div class="model-selector">
+    <div class="model-current" id="modelCurrent" onclick="toggleModelDropdown()">
+      <span class="model-current-name" id="currentModelName">Claude Sonnet 4.6</span>
+      <span class="model-current-provider" id="currentModelProvider">Anthropic</span>
+      <span class="model-current-arrow" id="modelArrow">▾</span>
     </div>
-    <div class="toolbar-right">
-      <div class="pill" id="turnsPill" title="Turn count">
-        <span id="turnCount">0</span> turns
+    <div class="model-dropdown" id="modelDropdown"></div>
+  </div>
+  <div class="topbar-right">
+    <div class="topbar-pill" id="turnPill"><span id="turnCount">0</span> turns</div>
+    <div class="topbar-pill" id="statusPill"><span class="dot green"></span> idle</div>
+    <button class="send-btn" id="sidebarToggle" onclick="toggleSidebar()" title="Sessions" style="width:30px;height:30px;background:var(--elevated);color:var(--text-muted);border:1px solid var(--border)">☰</button>
+  </div>
+</div>
+
+<!-- Main Layout -->
+<div class="layout">
+
+  <!-- Sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <span class="sidebar-title">Sessions</span>
+    </div>
+    <button class="new-session-btn" onclick="newSession()">+ New Session</button>
+    <div class="sessions-list" id="sessionsList"></div>
+  </aside>
+
+  <!-- Chat Area -->
+  <div class="chat-area">
+    <div class="messages" id="messages">
+      <div class="welcome" id="welcomeScreen">
+        <div class="welcome-icon">⚒</div>
+        <div class="welcome-title">Forge — AI Coding Agent</div>
+        <div class="welcome-subtitle">Model-agnostic. Any API key. Any endpoint. Just start chatting — or choose a model above.</div>
+        <div class="welcome-cards">
+          <div class="welcome-card" onclick="document.getElementById('input').focus()">
+            <div class="welcome-card-icon">💬</div>
+            <div class="welcome-card-title">Ask anything</div>
+            <div class="welcome-card-desc">Read files, edit code, run commands, build entire projects.</div>
+          </div>
+          <div class="welcome-card" onclick="toggleModelDropdown()">
+            <div class="welcome-card-icon">🔄</div>
+            <div class="welcome-card-title">Choose a model</div>
+            <div class="welcome-card-desc">18 models across 7 providers. Switch anytime mid-session.</div>
+          </div>
+          <div class="welcome-card" onclick="document.getElementById('sidebar').classList.toggle('collapsed');refreshSessions()">
+            <div class="welcome-card-icon">📂</div>
+            <div class="welcome-card-title">Pick up where you left</div>
+            <div class="welcome-card-desc">All sessions saved. Click sidebar to resume any conversation.</div>
+          </div>
+        </div>
       </div>
-      <div class="pill" id="statusPill" title="Session status">
-        <span class="dot green"></span> idle
+    </div>
+
+    <!-- Input -->
+    <div class="input-area">
+      <div class="input-bar">
+        <textarea class="input-box" id="input" rows="1" placeholder="Ask Forge to code..." onkeydown="handleKeydown(event)" oninput="autoResize(this)"></textarea>
+        <button class="send-btn" id="sendBtn" onclick="sendMessage()" title="Send (Enter)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+        </button>
       </div>
     </div>
   </div>
 
-  <!-- Messages -->
-  <div class="messages" id="messages">
-    <div class="empty-state">
-      <div class="empty-icon">⚒</div>
-      <div class="empty-title">Forge — AI Coding Agent</div>
-      <div class="empty-sub">Ask me to read files, edit code, run commands, or build anything. I stream responses in real-time.</div>
-    </div>
-  </div>
+</div>
 
-  <!-- Input -->
-  <div class="input-area">
-    <div class="input-wrapper">
-      <textarea class="input-box" id="input" rows="1" placeholder="Ask Forge to code..." onkeydown="handleKeydown(event)" oninput="autoResize(this)"></textarea>
-      <button class="send-btn" id="sendBtn" onclick="sendMessage()" title="Send message">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
-      </button>
-    </div>
+<!-- Status Bar -->
+<div class="status-bar">
+  <div class="status-left">
+    <div class="status-item"><span class="status-label">Tokens</span><span class="status-value" id="sTokens">0 / 0</span></div>
+    <div class="status-item"><span class="status-label">Context</span><div class="ctx-bar"><div class="ctx-fill s" id="sCtxFill" style="width:0%"></div></div><span class="status-value" id="sCtxPct" style="font-size:10px">0%</span></div>
   </div>
-
-  <!-- Status Bar -->
-  <div class="status-bar">
-    <div class="status-left">
-      <div class="status-item model-pill" onclick="toggleModelDropdown()" title="Change model">
-        <span class="status-label">Model</span>
-        <span class="status-value" id="statusModel">—</span>
-        <span style="font-size:8px">▾</span>
-        <div class="model-dropdown" id="modelDropdown"></div>
-      </div>
-      <div class="status-item">
-        <span class="status-label">Tokens</span>
-        <span class="status-value" id="statusTokens">0/0</span>
-      </div>
-      <div class="status-item" title="Context window usage">
-        <span class="status-label">Context</span>
-        <div class="context-bar"><div class="context-bar-fill safe" id="contextFill" style="width:0%"></div></div>
-        <span class="status-value" id="statusContext" style="font-size:10px">0%</span>
-      </div>
-    </div>
-    <div class="status-right">
-      <div class="status-item">
-        <span class="status-label">Cost</span>
-        <span class="status-value" id="statusCost">$0.00</span>
-      </div>
-      <div class="status-item" id="latencyItem" style="display:none">
-        <span class="status-label">Lat</span>
-        <span class="status-value" id="statusLatency">—</span>
-      </div>
-      <div class="status-item">
-        <span class="status-label">Provider</span>
-        <span class="status-value" id="statusProvider">—</span>
-      </div>
-    </div>
+  <div class="status-right">
+    <div class="status-item"><span class="status-label">Cost</span><span class="status-value" id="sCost">$0.00</span></div>
+    <div class="status-item"><span class="status-label">Lat</span><span class="status-value" id="sLatency">—</span></div>
+    <div class="status-item"><span class="status-label">Provider</span><span class="status-value" id="sProvider">—</span></div>
   </div>
 </div>
 
 <script>
 // ─── State ─────────────────────────────────────────────
-const state = {
-  sessionId: null,
-  model: '${process.env.FORGE_MODEL || "us.anthropic.claude-sonnet-4-6/2025-01-01-preview"}',
-  isStreaming: false,
-  abortController: null,
-  totalTokensIn: 0,
-  totalTokensOut: 0,
-  turnCount: 0,
-  sessionStart: Date.now(),
-  latency: null,
-  cost: 0,
+const st = {
+  sid: null, model: '${process.env.FORGE_MODEL || "us.anthropic.claude-sonnet-4-6/2025-01-01-preview"}',
+  streaming: false, abort: null, tIn: 0, tOut: 0, turns: 0, start: Date.now(), lat: null, cost: 0
 };
-const PROVIDER_INFO = '${process.env.FORGE_API_KEY || process.env.PORTKEY_API_KEY ? "openai-compatible" : "anthropic"}';
+const PROVIDER = '${process.env.FORGE_API_KEY || process.env.PORTKEY_API_KEY ? "openai-compatible" : "anthropic"}';
 
-// ─── Model Definitions ────────────────────────────────
 const MODELS = {
-  "us.anthropic.claude-sonnet-4-6/2025-01-01-preview":{name:"Claude Sonnet 4.6",desc:"Fast, capable coding",provider:"Anthropic"},
-  "us.anthropic.claude-opus-4-7/2025-01-01-preview":{name:"Claude Opus 4.7",desc:"Most capable Claude",provider:"Anthropic"},
-  "us.anthropic.claude-opus-4-1-20250805-v1:0/2025-01-02-preview":{name:"Claude Opus 4.1",desc:"Powerful reasoning",provider:"Anthropic"},
-  "us.anthropic.claude-3-5-haiku-20241022-v1:0/2024-10-22":{name:"Claude Haiku 3.5",desc:"Fastest Claude",provider:"Anthropic"},
-  "gpt-5.5/2025-04-01-preview":{name:"GPT-5.5",desc:"Latest GPT",provider:"OpenAI"},
-  "gpt-5/2025-01-01-preview":{name:"GPT-5",desc:"Powerful GPT",provider:"OpenAI"},
-  "gpt-4o/2025-01-01-preview":{name:"GPT-4o",desc:"Fast, capable",provider:"OpenAI"},
-  "gpt-4o-mini/2025-01-01-preview":{name:"GPT-4o Mini",desc:"Fast, cheap",provider:"OpenAI"},
-  "deepseek-v4-pro/2024-05-01-preview":{name:"DeepSeek V4 Pro",desc:"Strong coding",provider:"DeepSeek"},
-  "gemini-3-pro-preview/2025-01-01-preview":{name:"Gemini 3 Pro",desc:"Google's best",provider:"Google"},
-  "gemini-2.5-pro/2025-01-01-preview":{name:"Gemini 2.5 Pro",desc:"Strong reasoning",provider:"Google"},
-  "gemini-2.5-flash/2025-01-01-preview":{name:"Gemini 2.5 Flash",desc:"Fast Gemini",provider:"Google"},
-  "kimi-k2.6/2024-05-01-preview":{name:"Kimi K2.6",desc:"Moonshot AI",provider:"Moonshot"},
-  "minimax.minimax-m2.5/2025-01-02-preview":{name:"Minimax M2.5",desc:"Minimax flagship",provider:"MiniMax"},
-  "qwen.qwen3-next-80b-a3b/2025-01-01-preview":{name:"Qwen 3 Next 80B",desc:"Alibaba Qwen",provider:"Alibaba"},
-  "llama3-3-70b-instruct-v1/2025-01-01-preview":{name:"Llama 3.3 70B",desc:"Meta's best open",provider:"Meta"},
-  "gpt-4o":{name:"GPT-4o",desc:"OpenAI GPT-4o",provider:"OpenAI"},
-  "claude-sonnet-4-20250514":{name:"Claude 4 Sonnet",desc:"Anthropic direct",provider:"Anthropic"},
+  "us.anthropic.claude-sonnet-4-6/2025-01-01-preview":{id:"us.anthropic.claude-sonnet-4-6/2025-01-01-preview",name:"Claude Sonnet 4.6",desc:"Fast, capable coding",provider:"Anthropic",icon:"🟠"},
+  "us.anthropic.claude-opus-4-7/2025-01-01-preview":{id:"us.anthropic.claude-opus-4-7/2025-01-01-preview",name:"Claude Opus 4.7",desc:"Most capable Claude model",provider:"Anthropic",icon:"🟠"},
+  "us.anthropic.claude-opus-4-1-20250805-v1:0/2025-01-02-preview":{id:"us.anthropic.claude-opus-4-1-20250805-v1:0/2025-01-02-preview",name:"Claude Opus 4.1",desc:"Powerful reasoning capabilities",provider:"Anthropic",icon:"🟠"},
+  "us.anthropic.claude-3-5-haiku-20241022-v1:0/2024-10-22":{id:"us.anthropic.claude-3-5-haiku-20241022-v1:0/2024-10-22",name:"Claude Haiku 3.5",desc:"Fastest Claude — speed-first",provider:"Anthropic",icon:"🟠"},
+  "gpt-5.5/2025-04-01-preview":{id:"gpt-5.5/2025-04-01-preview",name:"GPT-5.5",desc:"Latest and most capable GPT",provider:"OpenAI",icon:"🟢"},
+  "gpt-5/2025-01-01-preview":{id:"gpt-5/2025-01-01-preview",name:"GPT-5",desc:"Powerful, balanced performance",provider:"OpenAI",icon:"🟢"},
+  "gpt-4o/2025-01-01-preview":{id:"gpt-4o/2025-01-01-preview",name:"GPT-4o",desc:"Fast, capable multimodal",provider:"OpenAI",icon:"🟢"},
+  "gpt-4o-mini/2025-01-01-preview":{id:"gpt-4o-mini/2025-01-01-preview",name:"GPT-4o Mini",desc:"Fast and cost-effective",provider:"OpenAI",icon:"🟢"},
+  "deepseek-v4-pro/2024-05-01-preview":{id:"deepseek-v4-pro/2024-05-01-preview",name:"DeepSeek V4 Pro",desc:"Strong coding performance",provider:"DeepSeek",icon:"🔵"},
+  "gemini-3-pro-preview/2025-01-01-preview":{id:"gemini-3-pro-preview/2025-01-01-preview",name:"Gemini 3 Pro",desc:"Google's most capable model",provider:"Google",icon:"🔴"},
+  "gemini-2.5-pro/2025-01-01-preview":{id:"gemini-2.5-pro/2025-01-01-preview",name:"Gemini 2.5 Pro",desc:"Strong reasoning, long context",provider:"Google",icon:"🔴"},
+  "gemini-2.5-flash/2025-01-01-preview":{id:"gemini-2.5-flash/2025-01-01-preview",name:"Gemini 2.5 Flash",desc:"Fast, efficient Gemini",provider:"Google",icon:"🔴"},
+  "kimi-k2.6/2024-05-01-preview":{id:"kimi-k2.6/2024-05-01-preview",name:"Kimi K2.6",desc:"Moonshot AI flagship",provider:"Moonshot",icon:"🟣"},
+  "minimax.minimax-m2.5/2025-01-02-preview":{id:"minimax.minimax-m2.5/2025-01-02-preview",name:"Minimax M2.5",desc:"Minimax flagship model",provider:"MiniMax",icon:"🩵"},
+  "qwen.qwen3-next-80b-a3b/2025-01-01-preview":{id:"qwen.qwen3-next-80b-a3b/2025-01-01-preview",name:"Qwen 3 Next 80B",desc:"Alibaba Qwen MoE",provider:"Alibaba",icon:"🟧"},
+  "llama3-3-70b-instruct-v1/2025-01-01-preview":{id:"llama3-3-70b-instruct-v1/2025-01-01-preview",name:"Llama 3.3 70B",desc:"Meta's best open model",provider:"Meta",icon:"🔷"},
+  "gpt-4o":{id:"gpt-4o",name:"GPT-4o",desc:"OpenAI GPT-4o direct",provider:"OpenAI",icon:"🟢"},
+  "claude-sonnet-4-20250514":{id:"claude-sonnet-4-20250514",name:"Claude 4 Sonnet",desc:"Anthropic direct API",provider:"Anthropic",icon:"🟠"},
 };
 
-// ─── DOM Helpers ──────────────────────────────────────
-const $ = id => document.getElementById(id);
-const $$ = (sel, el) => (el || document).querySelectorAll(sel);
+// ─── Helpers ───────────────────────────────────────────
+const $=id=>document.getElementById(id);
+const esc=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+function xt(c){return(c||[]).filter(x=>x.type==='text').map(x=>x.text).join('\\n')}
+function sb(){const m=$('messages');requestAnimationFrame(()=>m.scrollTop=m.scrollHeight)}
 
-function escapeHtml(t){return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
-function extractText(content){return(content||[]).filter(c=>c.type==='text').map(c=>c.text).join('\\n')}
-
-// ─── Markdown Rendering ───────────────────────────────
-function renderMarkdown(text){
-  if(!text)return'';
-  let html=escapeHtml(text);
-  // Code blocks
-  html=html.replace(/\`\`\`(\w*)\\n?([\\s\\S]*?)\`\`\`/g,(_,lang,code)=>'<pre><code>'+code.trim()+'</code></pre>');
-  // Inline code
-  html=html.replace(/\`([^\`]+)\`/g,'<code>$1</code>');
-  // Bold
-  html=html.replace(/\\*\\*(.+?)\\*\\*/g,'<strong>$1</strong>');
-  // Italic
-  html=html.replace(/\\*(.+?)\\*/g,'<em>$1</em>');
-  // Line breaks
-  html=html.replace(/\\n/g,'<br>');
-  return html;
+function md(t){
+  if(!t)return'';
+  let h=esc(t);
+  h=h.replace(/\`\`\`(\w*)\\n?([\\s\\S]*?)\`\`\`/g,(_,lang,code)=>'<pre><code>'+code.trim()+'</code></pre>');
+  h=h.replace(/\`([^\`]+)\`/g,'<code>$1</code>');
+  h=h.replace(/\\*\\*(.+?)\\*\\*/g,'<strong>$1</strong>');
+  h=h.replace(/\\*([^*]+)\\*/g,'<em>$1</em>');
+  h=h.replace(/\\n/g,'<br>');
+  return h;
 }
 
-// ─── Status Bar ───────────────────────────────────────
-function updateStatusBar(){
-  $('statusModel').textContent = (MODELS[state.model]||{}).name || state.model;
-  $('statusTokens').textContent = state.totalTokensIn.toLocaleString() + ' / ' + state.totalTokensOut.toLocaleString();
-  $('turnCount').textContent = state.turnCount;
-  $('statusProvider').textContent = PROVIDER_INFO;
-  
-  const ctxPct = Math.min(100, Math.round((state.totalTokensIn / 180000) * 100));
-  $('statusContext').textContent = ctxPct + '%';
-  const fill = $('contextFill');
-  fill.style.width = ctxPct + '%';
-  fill.className = 'context-bar-fill ' + (ctxPct > 80 ? 'danger' : ctxPct > 60 ? 'warn' : 'safe');
-  
-  const costEst = (state.totalTokensIn * 3 / 1000000 + state.totalTokensOut * 15 / 1000000) * 1.1;
-  state.cost = costEst;
-  $('statusCost').textContent = '$' + costEst.toFixed(costEst < 0.01 ? 4 : 2);
-  
-  if(state.latency){
-    $('latencyItem').style.display = '';
-    $('statusLatency').textContent = (state.latency / 1000).toFixed(1) + 's';
-  }
+// ─── Model Picker ─────────────────────────────────────
+function updateModelDisplay(){
+  const m = MODELS[st.model] || {name:st.model,provider:'?',icon:'⚙'};
+  $('currentModelName').textContent = m.name;
+  $('currentModelProvider').textContent = m.provider;
+  $('sProvider').textContent = m.provider;
 }
-
-function setStatus(state, text){
-  const el = $('statusPill');
-  el.innerHTML = '<span class="dot ' + state + '"></span> ' + text;
-}
-
 function toggleModelDropdown(){
   const dd = $('modelDropdown');
-  dd.classList.toggle('visible');
-  if(dd.classList.contains('visible')) renderModelDropdown();
+  const arr = $('modelArrow');
+  const vis = dd.classList.toggle('visible');
+  arr.classList.toggle('open', vis);
+  if(vis) renderModelDropdown();
 }
 function renderModelDropdown(){
-  const dd = $('modelDropdown');
-  const grouped = {};
-  for(const[id,info] of Object.entries(MODELS)){
-    if(!grouped[info.provider]) grouped[info.provider] = [];
-    grouped[info.provider].push({id, ...info});
+  const groups = {};
+  for(const [id, m] of Object.entries(MODELS)){
+    if(!groups[m.provider]) groups[m.provider] = [];
+    groups[m.provider].push(m);
   }
-  let html='';
-  for(const[provider,models] of Object.entries(grouped)){
-    html += '<div class="md-header">'+provider+'</div>';
+  const providerClass = {Anthropic:'anthropic',OpenAI:'openai',DeepSeek:'deepseek',Google:'google',Moonshot:'moonshot',MiniMax:'minimax',Alibaba:'alibaba',Meta:'meta'};
+  let html = '';
+  for(const [provider, models] of Object.entries(groups)){
+    html += '<div class="group-header">'+provider+'</div>';
     for(const m of models){
-      html += '<div class="md-item'+(m.id===state.model?' active':'')+'" onclick="switchModel(\''+m.id+'\')"><div class="md-name">'+m.name+'</div><div class="md-desc">'+m.desc+'</div></div>';
+      const sel = m.id === st.model ? ' selected' : '';
+      const cc = providerClass[provider] || '';
+      html += '<div class="model-card'+sel+'" data-id="'+m.id+'" onclick="pickModel(\''+m.id+'\')"><div class="mc-badge '+cc+'">'+m.icon+'</div><div class="mc-info"><div class="mc-name">'+m.name+'</div><div class="mc-desc">'+m.desc+'</div></div><div class="mc-check">✓</div></div>';
     }
   }
-  dd.innerHTML = html;
+  $('modelDropdown').innerHTML = html;
 }
-function switchModel(id){
-  state.model = id;
-  updateStatusBar();
+function pickModel(id){
+  st.model = id;
+  updateModelDisplay();
   $('modelDropdown').classList.remove('visible');
+  $('modelArrow').classList.remove('open');
+  updateStatusBar();
 }
 document.addEventListener('click', e => {
-  if(!e.target.closest('.model-pill')) $('modelDropdown').classList.remove('visible');
+  if(!e.target.closest('.model-selector')){
+    $('modelDropdown').classList.remove('visible');
+    $('modelArrow').classList.remove('open');
+  }
 });
 
 // ─── Sidebar ──────────────────────────────────────────
@@ -458,249 +435,165 @@ async function refreshSessions(){
     const sessions = await resp.json();
     const list = $('sessionsList');
     list.innerHTML = sessions.map(s => {
-      const d = new Date(s.updatedAt);
-      const time = d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
-      const active = s.id === state.sessionId ? ' active' : '';
-      return '<div class="session-item'+active+'" onclick="loadSessionById(\''+s.id+'\')"><div class="s-title">'+escapeHtml(s.cwd.split('/').pop()||'Session')+'</div><div class="s-model">'+(MODELS[s.model]||{}).name||''+'</div><div class="s-date">'+time+'</div></div>';
+      const d = new Date(s.updatedAt), t = d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+      const mn = (MODELS[s.model]||{}).name||s.model||'';
+      const active = s.id === st.sid ? ' active' : '';
+      return '<div class="session-item'+active+'" onclick="loadSession(\''+s.id+'\')"><div class="stitle">'+(s.cwd?.split('/').pop()||'Session')+'</div><div class="smodel">'+mn+'</div><div class="sdate">'+t+'</div></div>';
     }).join('');
   }catch(e){}
 }
-async function loadSessionById(id){
+async function loadSession(id){
   try{
     const resp = await fetch('/api/sessions/'+id);
-    const session = await resp.json();
-    state.sessionId = session.id;
-    state.turnCount = session.turnCount || 0;
-    state.totalTokensIn = session.totalTokens?.in || 0;
-    state.totalTokensOut = session.totalTokens?.out || 0;
-    if(session.model) state.model = session.model;
-    updateStatusBar();
-    $('messages').innerHTML = '';
-    if(session.history && session.history.length > 0){
-      for(const msg of session.history){
-        if(msg.role==='user') addUserMessage(msg);
-        else if(msg.role==='assistant') addAssistantMessage(msg);
-        else if(msg.role==='toolResult') addToolResult(msg);
+    const s = await resp.json();
+    st.sid = s.id; st.turns = s.turnCount||0; st.tIn = s.totalTokens?.in||0; st.tOut = s.totalTokens?.out||0;
+    if(s.model) st.model = s.model;
+    updateModelDisplay(); updateStatusBar();
+    const el = $('messages');
+    const w = $('welcomeScreen'); if(w) w.style.display='none';
+    el.innerHTML = '';
+    if(s.history?.length){
+      for(const msg of s.history){
+        if(msg.role==='user') addUserMsg(msg);
+        else if(msg.role==='assistant') addAsstMsg(msg);
+        else if(msg.role==='toolResult') addToolRes(msg);
       }
-    } else {
-      $('messages').innerHTML = '<div class="empty-state"><div class="empty-icon">⚒</div><div class="empty-title">Forge</div><div class="empty-sub">Start chatting to continue this session.</div></div>';
+    }else{
+      el.innerHTML = '<div class="welcome" id="welcomeScreen"><div class="welcome-icon">⚒</div><div class="welcome-title">Forge — AI Coding Agent</div><div class="welcome-subtitle">Continue this session or start a new one.</div></div>';
     }
-    $('sessionTitle').textContent = session.cwd?.split('/').pop() || 'Session';
-    refreshSessions();
-    scrollToBottom();
+    refreshSessions(); sb();
   }catch(e){console.error(e)}
 }
 async function newSession(){
-  state.sessionId = null;
-  state.turnCount = 0;
-  state.totalTokensIn = 0;
-  state.totalTokensOut = 0;
-  state.latency = null;
-  state.cost = 0;
-  updateStatusBar();
-  $('messages').innerHTML = '<div class="empty-state"><div class="empty-icon">⚒</div><div class="empty-title">Forge — AI Coding Agent</div><div class="empty-sub">Ask me to read files, edit code, run commands, or build anything. I stream responses in real-time.</div></div>';
-  $('sessionTitle').textContent = 'New Session';
+  st.sid = null; st.turns = 0; st.tIn = 0; st.tOut = 0; st.lat = null; st.cost = 0;
+  updateModelDisplay(); updateStatusBar();
+  $('messages').innerHTML = '<div class="welcome" id="welcomeScreen"><div class="welcome-icon">⚒</div><div class="welcome-title">Forge — AI Coding Agent</div><div class="welcome-subtitle">Model-agnostic. Any API key. Any endpoint. Just start chatting — or choose a model above.</div><div class="welcome-cards"><div class="welcome-card" onclick="document.getElementById(\'input\').focus()"><div class="welcome-card-icon">💬</div><div class="welcome-card-title">Ask anything</div><div class="welcome-card-desc">Read files, edit code, run commands, build entire projects.</div></div><div class="welcome-card" onclick="toggleModelDropdown()"><div class="welcome-card-icon">🔄</div><div class="welcome-card-title">Choose a model</div><div class="welcome-card-desc">18 models across 7 providers. Switch anytime mid-session.</div></div><div class="welcome-card" onclick="document.getElementById(\'sidebar\').classList.toggle(\'collapsed\');refreshSessions()"><div class="welcome-card-icon">📂</div><div class="welcome-card-title">Pick up where you left</div><div class="welcome-card-desc">All sessions saved. Click sidebar to resume any conversation.</div></div></div></div>';
   $('input').focus();
 }
 
 // ─── Messages ─────────────────────────────────────────
-function scrollToBottom(){
-  const m = $('messages');
-  requestAnimationFrame(() => { m.scrollTop = m.scrollHeight; });
+function addUserMsg(msg){
+  const t = xt(msg.content);
+  const d = document.createElement('div'); d.className='message user';
+  d.innerHTML = '<div class="bubble">'+esc(t)+'</div>';
+  $('messages').appendChild(d);
+  const w = $('welcomeScreen'); if(w) w.style.display='none';
+  sb();
 }
-function addUserMessage(msg){
-  const text = extractText(msg.content);
-  const div = document.createElement('div');
-  div.className = 'message user';
-  div.innerHTML = '<div class="bubble">'+escapeHtml(text)+'</div>';
-  $('messages').appendChild(div);
-  // Remove empty state
-  const es = $('messages').querySelector('.empty-state');
-  if(es) es.remove();
-  scrollToBottom();
+function addAsstMsg(msg){
+  const t = xt(msg.content);
+  const tcs = (msg.content||[]).filter(c=>c.type==='toolCall');
+  const d = document.createElement('div'); d.className='message assistant';
+  d.innerHTML = '<div class="avatar">F</div><div class="content">'+md(t)+'</div>';
+  $('messages').appendChild(d);
+  for(const tc of tcs) addToolCard(tc.id, tc.name, tc.arguments, false);
+  sb();
 }
-function addAssistantMessage(msg){
-  const text = extractText(msg.content);
-  const toolCalls = (msg.content||[]).filter(c=>c.type==='toolCall');
-  const div = document.createElement('div');
-  div.className = 'message assistant';
-  div.innerHTML = '<div class="avatar">⚒</div><div class="bubble">'+renderMarkdown(text)+'</div>';
-  $('messages').appendChild(div);
-  for(const tc of toolCalls) addToolCallCard(tc.id, tc.name, tc.arguments, false);
-  scrollToBottom();
+function addToolCard(id, name, args, collapsed){
+  const d = document.createElement('div'); d.className='message assistant';
+  const a = typeof args==='object'?JSON.stringify(args).slice(0,120):String(args||'').slice(0,120);
+  d.innerHTML = '<div class="avatar">🔧</div><div class="content"><div class="tool-card'+(collapsed?'':' expanded')+'" id="tool-'+id+'"><div class="tool-card-header" onclick="this.parentElement.classList.toggle(\'expanded\')"><span class="tool-name">'+esc(name)+'</span><span class="tool-args">'+esc(a)+'</span><span class="tool-status running">running</span></div><div class="tool-card-body">Running...</div></div></div></div>';
+  $('messages').appendChild(d); sb();
 }
-function addToolCallCard(id, name, args, collapsed){
-  const div = document.createElement('div');
-  div.className = 'message assistant';
-  const argsStr = typeof args === 'object' ? JSON.stringify(args).slice(0,100) : String(args||'').slice(0,100);
-  div.innerHTML = '<div class="avatar">🔧</div><div class="bubble"><div class="tool-card'+(collapsed?'':' expanded')+'" id="tool-'+id+'"><div class="tool-card-header" onclick="this.parentElement.classList.toggle(\'expanded\')"><span class="tool-icon">🔨</span><span class="tool-name">'+escapeHtml(name)+'</span><span class="tool-args">'+escapeHtml(argsStr)+'</span><span class="tool-status running">running</span></div><div class="tool-card-body">Running...</div></div></div>';
-  $('messages').appendChild(div);
-  scrollToBottom();
+function updToolRes(id, content, isErr){
+  const el = $('tool-'+id); if(!el) return;
+  const b = el.querySelector('.tool-card-body'), s = el.querySelector('.tool-status');
+  if(b) b.textContent = content.slice(0,5000);
+  if(s){s.textContent = isErr?'error':'done';s.className='tool-status '+(isErr?'error':'done');}
 }
-function updateToolResult(toolCallId, content, isError){
-  const el = $('tool-'+toolCallId);
-  if(!el) return;
-  const body = el.querySelector('.tool-card-body');
-  const status = el.querySelector('.tool-status');
-  if(body) body.textContent = content.slice(0,5000);
-  if(status){
-    status.textContent = isError ? 'error' : 'done';
-    status.className = 'tool-status ' + (isError ? 'error' : 'done');
-  }
-}
-function addToolResult(msg){
-  const text = extractText(msg.content);
-  updateToolResult(msg.toolCallId, text, msg.isError);
+function addToolRes(msg){
+  updToolRes(msg.toolCallId, xt(msg.content), msg.isError);
 }
 
 // ─── Streaming ────────────────────────────────────────
-function createStreamingAssistant(){
-  const div = document.createElement('div');
-  div.className = 'message assistant';
-  div.id = 'streaming-msg';
-  div.innerHTML = '<div class="avatar">⚒</div><div class="bubble"><span class="streaming-cursor"></span></div>';
-  $('messages').appendChild(div);
-  const es = $('messages').querySelector('.empty-state');
-  if(es) es.remove();
-  scrollToBottom();
-  return div.querySelector('.bubble');
+function startStream(){
+  const d = document.createElement('div'); d.className='message assistant'; d.id='stream-msg';
+  d.innerHTML = '<div class="avatar">F</div><div class="content"><span class="stream-cursor"></span></div>';
+  $('messages').appendChild(d);
+  const w = $('welcomeScreen'); if(w) w.style.display='none';
+  sb();
+  return d.querySelector('.content');
 }
 
 async function sendMessage(){
-  const input = $('input');
-  const text = input.value.trim();
-  if(!text || state.isStreaming) return;
-  
-  const es = $('messages').querySelector('.empty-state');
-  if(es) es.remove();
-  
-  addUserMessage({role:'user',content:[{type:'text',text}]});
-  input.value = ''; autoResize(input);
-  
-  const bubble = createStreamingAssistant();
-  const cursor = bubble.querySelector('.streaming-cursor');
-  
-  state.isStreaming = true;
-  state.abortController = new AbortController();
-  const startTime = performance.now();
+  const inp = $('input'), txt = inp.value.trim();
+  if(!txt || st.streaming) return;
+  const w = $('welcomeScreen'); if(w) w.style.display='none';
+  addUserMsg({role:'user',content:[{type:'text',text:txt}]});
+  inp.value=''; autoResize(inp);
+
+  const bubble = startStream(), cursor = bubble.querySelector('.stream-cursor');
+  st.streaming = true; st.abort = new AbortController();
+  const t0 = performance.now();
   $('sendBtn').style.display = 'none';
-  const stopBtn = document.createElement('button');
-  stopBtn.className = 'stop-btn';
-  stopBtn.textContent = '■';
-  stopBtn.onclick = stopStreaming;
-  $('sendBtn').parentNode.appendChild(stopBtn);
+  const stop = document.createElement('button'); stop.className='stop-btn'; stop.textContent='■'; stop.onclick=stopStream;$('sendBtn').parentNode.appendChild(stop);
   setStatus('yellow','streaming');
-  
-  let fullText = '';
-  const toolCallIds = new Set();
-  
+
+  let full = ''; const tcIds = new Set();
   try{
-    const resp = await fetch('/api/chat',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({sessionId:state.sessionId,message:text,model:state.model}),
-      signal:state.abortController.signal,
-    });
-    if(!resp.ok) throw new Error(await resp.text());
-    
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-    
+    const r = await fetch('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sessionId:st.sid,message:txt,model:st.model}),signal:st.abort.signal});
+    if(!r.ok) throw new Error(await r.text());
+    const reader = r.body.getReader(), dec = new TextDecoder(); let buf = '';
     while(true){
-      const {done, value} = await reader.read();
-      if(done) break;
-      buffer += decoder.decode(value,{stream:true});
-      const lines = buffer.split('\\n');
-      buffer = lines.pop()||'';
-      
-      for(const line of lines){
-        if(!line.startsWith('data: ')) continue;
-        const data = line.slice(6); if(!data) continue;
+      const {done,value} = await reader.read(); if(done) break;
+      buf += dec.decode(value,{stream:true}); const lines = buf.split('\\n'); buf = lines.pop()||'';
+      for(const l of lines){
+        if(!l.startsWith('data: ')) continue; const d = l.slice(6); if(!d) continue;
         try{
-          const event = JSON.parse(data);
-          switch(event.type){
-            case 'text':
-              fullText += event.text;
-              bubble.innerHTML = renderMarkdown(fullText);
-              bubble.appendChild(cursor);
-              break;
-            case 'toolCall':
-              if(!toolCallIds.has(event.id)){
-                toolCallIds.add(event.id);
-                addToolCallCard(event.id, event.name, event.arguments, false);
-              }
-              break;
-            case 'toolResult':
-              updateToolResult(event.toolCallId, event.content, event.isError);
-              break;
-            case 'usage':
-              if(event.usage){
-                state.totalTokensIn = (state.totalTokensIn||0)+(event.usage.input||0);
-                state.totalTokensOut = (state.totalTokensOut||0)+(event.usage.output||0);
-              }
-              break;
-            case 'done':
-              state.sessionId = event.sessionId;
-              state.turnCount++;
-              $('sessionTitle').textContent = event.cwd?.split('/').pop()||'Session';
-              refreshSessions();
-              break;
-            case 'error':
-              bubble.innerHTML += '<div style="color:var(--red);margin-top:8px;font-size:12px">Error: '+escapeHtml(event.message)+'</div>';
-              break;
+          const e = JSON.parse(d);
+          switch(e.type){
+            case 'text': full += e.text; bubble.innerHTML = md(full); bubble.appendChild(cursor); break;
+            case 'toolCall': if(!tcIds.has(e.id)){tcIds.add(e.id);addToolCard(e.id,e.name,e.arguments,false);} break;
+            case 'toolResult': updToolRes(e.toolCallId,e.content,e.isError); break;
+            case 'usage': if(e.usage){st.tIn=(st.tIn||0)+(e.usage.input||0);st.tOut=(st.tOut||0)+(e.usage.output||0);} break;
+            case 'done': st.sid = e.sessionId; st.turns++; refreshSessions(); break;
+            case 'error': bubble.innerHTML += '<div style="color:var(--red);margin-top:8px;font-size:12px">Error: '+esc(e.message)+'</div>'; break;
           }
           updateStatusBar();
         }catch{}
       }
     }
-    state.latency = performance.now() - startTime;
+    st.lat = performance.now() - t0;
   }catch(e){
-    if(e.name!=='AbortError'){
-      bubble.innerHTML += '<div style="color:var(--red);margin-top:8px;font-size:12px">Error: '+escapeHtml(e.message)+'</div>';
-    }
+    if(e.name!=='AbortError') bubble.innerHTML += '<div style="color:var(--red);margin-top:8px;font-size:12px">Error: '+esc(e.message)+'</div>';
   }finally{
-    cursor?.remove();
-    state.isStreaming = false;
-    state.abortController = null;
-    stopBtn?.remove();
-    $('sendBtn').style.display = '';
-    setStatus('green','idle');
-    updateStatusBar();
-    scrollToBottom();
-    $('input').focus();
+    cursor?.remove(); st.streaming = false; st.abort = null;
+    stop?.remove(); $('sendBtn').style.display='';
+    setStatus('green','idle'); updateStatusBar(); sb(); $('input').focus();
   }
 }
+function stopStream(){if(st.abort)st.abort.abort()}
 
-function stopStreaming(){
-  if(state.abortController) state.abortController.abort();
+// ─── Status Bar ───────────────────────────────────────
+function updateStatusBar(){
+  $('sTokens').textContent = (st.tIn||0).toLocaleString()+' / '+(st.tOut||0).toLocaleString();
+  $('turnCount').textContent = st.turns;
+  $('sProvider').textContent = (MODELS[st.model]||{}).provider || PROVIDER;
+
+  const ctx = Math.min(100,Math.round(((st.tIn||0)/180000)*100));
+  $('sCtxPct').textContent = ctx+'%';
+  const f = $('sCtxFill'); f.style.width = ctx+'%';
+  f.className = 'ctx-fill '+(ctx>80?'d':ctx>60?'w':'s');
+
+  const cost = ((st.tIn||0)*3/1e6+(st.tOut||0)*15/1e6)*1.1;
+  st.cost = cost;
+  $('sCost').textContent = '$'+cost.toFixed(cost<0.01?4:2);
+  if(st.lat) $('sLatency').textContent = (st.lat/1000).toFixed(1)+'s';
+}
+function setStatus(state,text){
+  $('statusPill').innerHTML = '<span class="dot '+state+'"></span> '+text;
 }
 
 // ─── Input ────────────────────────────────────────────
-function autoResize(el){
-  el.style.height = 'auto';
-  el.style.height = Math.min(el.scrollHeight, 200) + 'px';
-}
-function handleKeydown(e){
-  if(e.key==='Enter'&&!e.shiftKey){
-    e.preventDefault();
-    sendMessage();
-  }
-}
+function autoResize(el){el.style.height='auto';el.style.height=Math.min(el.scrollHeight,200)+'px'}
+function handleKeydown(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage()}}
 
 // ─── Init ─────────────────────────────────────────────
-updateStatusBar();
-refreshSessions();
-setInterval(refreshSessions, 30000);
+updateModelDisplay(); updateStatusBar(); refreshSessions();
+setInterval(refreshSessions,30000);
 $('input').focus();
-// Restore last session if available
-(async function(){
-  try{
-    const sessions = await (await fetch('/api/sessions')).json();
-    if(sessions.length > 0 && sessions[0].id){
-      loadSessionById(sessions[0].id);
-    }
-  }catch(e){}
+(async()=>{
+  try{const r=await(await fetch('/api/sessions')).json();if(r.length)loadSession(r[0].id)}catch(e){}
 })();
 </script>
 </body>
@@ -720,7 +613,6 @@ export function createApp(): express.Express {
     next();
   });
 
-  // Static pages
   app.get("/", (_req, res) => {
     res.setHeader("Content-Type", "text/html; charset=utf-8");
     res.send(WEBAPP_HTML);
@@ -753,7 +645,6 @@ export function createApp(): express.Express {
     if (!session) session = createSession(process.cwd(), effectiveModel);
     else session.model = effectiveModel;
 
-    // SSE setup
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
@@ -771,7 +662,6 @@ export function createApp(): express.Express {
       res.write(`data: ${JSON.stringify(data)}\n\n`);
     }
 
-    // Provider
     const key = process.env.FORGE_API_KEY || process.env.PORTKEY_API_KEY || process.env.OPENAI_API_KEY;
     const baseUrl = process.env.FORGE_BASE_URL || (process.env.PORTKEY_API_KEY ? "https://api.portkey.ai/v1" : undefined) || process.env.PORTKEY_BASE_URL;
     const hasOpenAI = key;
@@ -785,7 +675,6 @@ export function createApp(): express.Express {
 
     try {
       let totalInput = 0, totalOutput = 0;
-      const startTime = Date.now();
 
       for await (const chunk of agentLoop(message, session.history, {
         provider,
@@ -796,17 +685,14 @@ export function createApp(): express.Express {
         onText: (text) => {
           send({ type: "text", text });
         },
-        onToolCall: (toolCallId, name, args) => {
-          send({ type: "toolCall", id: toolCallId, name, arguments: JSON.stringify(args).slice(0, 200) });
+        onToolCall: (toolCallId, name, _args) => {
+          send({ type: "toolCall", id: toolCallId, name });
         },
         onToolResult: (toolCallId, content, isError) => {
           send({ type: "toolResult", toolCallId, content: content.slice(0, 5000), isError });
         },
-      })) {
-        // chunks handled by onText callback
-      }
+      }));
 
-      // Extract usage from last assistant message
       const lastMsg = session.history[session.history.length - 1];
       if (lastMsg?.role === "assistant" && (lastMsg as any).usage) {
         const u = (lastMsg as any).usage;
