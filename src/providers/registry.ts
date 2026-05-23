@@ -51,7 +51,6 @@ export function createOpenAIProvider(opts?: { apiKey?: string; baseURL?: string 
       model: opts.model,
       messages: openaiMessages,
       tools: tools?.length ? tools : undefined,
-      max_tokens: opts.maxTokens ?? 4096,
       temperature: opts.temperature ?? 0,
       stream: true,
     }, { signal: opts.signal });
