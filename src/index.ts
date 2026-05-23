@@ -14,6 +14,7 @@ import {
   ProviderRegistry,
   createAnthropicProvider,
   createOpenAIProvider,
+  createPortkeyProvider,
   createGoogleProvider,
   createOllamaProvider,
 } from "./providers/registry.js";
@@ -56,12 +57,16 @@ function accent(text: string): string {
 
 async function runCLI(initialPrompt: string): Promise<void> {
   const registry = ProviderRegistry.autoDiscover();
-  const provider = registry.get("anthropic") ??
+
+  // Provider priority: Portkey > Anthropic > OpenAI > Google
+  const provider = registry.get("portkey") ??
+    registry.get("anthropic") ??
     registry.get("openai") ??
     registry.get("google");
 
   if (!provider) {
-    console.error("No API key found. Set ANTHROPIC_API_KEY, OPENAI_API_KEY, or GOOGLE_API_KEY.");
+    console.error("No provider found. Set PORTKEY_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY.");
+    console.error("Portkey config auto-loaded from ~/.pi/agent/models.json if available.");
     process.exit(1);
   }
 
@@ -94,6 +99,8 @@ async function runCLI(initialPrompt: string): Promise<void> {
   console.log("");
   console.log(accent("  ⚒  Forge — AI Coding Agent"));
   console.log(dim(`  Provider: ${provider.name}`));
+  const models = registry.getAllModels().filter((m) => m.provider === provider.name);
+  console.log(dim(`  Models: ${models.length} available via Portkey`));
   console.log(dim(`  Tools: ${DEFAULT_TOOLS.map((t) => t.name).join(", ")}`));
   console.log("");
 
@@ -143,6 +150,25 @@ async function main(): Promise<void> {
     const port = parseInt(args[1] || process.env.FORGE_PORT || "4200", 10);
     startServer(port);
     return;
+  }
+
+  // "forge models" — list available models
+  if (args[0] === "models") {
+    const registry = ProviderRegistry.autoDiscover();
+    const models = registry.getAllModels();
+    if (models.length === 0) {
+      console.log("No models available. Configure a provider first.");
+      process.exit(1);
+    }
+    console.log("");
+    console.log(accent("Available Models:"));
+    console.log("");
+    for (const m of models) {
+      console.log(`  ${accent(m.provider + "/" + m.id)}`);
+      console.log(`  ${dim("  " + (m.name ?? m.id))}`);
+    }
+    console.log("");
+    process.exit(0);
   }
 
   // "forge" or "forge <prompt>" — CLI mode

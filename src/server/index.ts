@@ -962,12 +962,12 @@ export function createApp(providerName?: string): express.Express {
       res.write(`data: ${JSON.stringify(data)}\n\n`);
     }
 
-    // Auto-discover provider
+    // Auto-discover provider — Portkey first
     const registry = ProviderRegistry.autoDiscover();
-    const provider = registry.get("anthropic");
+    const provider = registry.get("portkey") ?? registry.get("anthropic");
 
     if (!provider) {
-      send({ type: "error", message: "No provider configured. Set ANTHROPIC_API_KEY." });
+      send({ type: "error", message: "No provider configured. Set PORTKEY_API_KEY or ANTHROPIC_API_KEY." });
       res.end();
       return;
     }

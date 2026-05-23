@@ -1,6 +1,6 @@
 {
   "name": "@jaraxxxx/forge",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "AI-first coding agent harness — model-agnostic, context-intelligent, self-improving. CLI + Web app.",
   "type": "module",
   "main": "src/index.ts",

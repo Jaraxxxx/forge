@@ -6,6 +6,9 @@
  */
 
 import type { Provider, CompleteOptions, ProviderChunk, ModelDefinition, Message, ToolDefinition } from "../core/types.js";
+import { readFileSync, existsSync } from "fs";
+import { join } from "path";
+import { homedir } from "os";
 
 // ─── Anthropic ────────────────────────────────────────
 
@@ -111,21 +114,193 @@ export function createAnthropicProvider(apiKey?: string): Provider {
 
 // ─── OpenAI ───────────────────────────────────────────
 
-// Placeholder — implement when needed
+import OpenAI from "openai";
+
 export function createOpenAIProvider(apiKey?: string): Provider {
-  const _key = apiKey ?? process.env.OPENAI_API_KEY;
-  return {
-    name: "openai",
-    async *complete(_messages: Message[], _opts: CompleteOptions): AsyncIterable<ProviderChunk> {
-      yield { type: "text", text: "OpenAI provider not yet implemented" };
-      yield { type: "stop", stopReason: "stop" };
-    },
-  };
+  const client = new OpenAI({ apiKey: apiKey ?? process.env.OPENAI_API_KEY });
+
+  async function* complete(messages: Message[], opts: CompleteOptions): AsyncIterable<ProviderChunk> {
+    const openaiMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = messages
+      .filter((m) => m.role !== "toolResult") // tool results handled separately
+      .map((m) => {
+        const text = m.content
+          .filter((c) => c.type === "text")
+          .map((c) => (c as any).text)
+          .join("\n");
+
+        if (m.role === "system") return { role: "system", content: text };
+        if (m.role === "assistant") return { role: "assistant", content: text };
+        return { role: "user", content: text };
+      });
+
+    // Add system prompt if provided
+    if (opts.systemPrompt && !messages.some((m) => m.role === "system")) {
+      openaiMessages.unshift({ role: "system", content: opts.systemPrompt });
+    }
+
+    const tools: OpenAI.Chat.Completions.ChatCompletionTool[] | undefined = opts.tools?.map((t) => ({
+      type: "function" as const,
+      function: {
+        name: t.name,
+        description: t.description,
+        parameters: t.parameters as Record<string, unknown>,
+      },
+    }));
+
+    const stream = await client.chat.completions.create({
+      model: opts.model,
+      messages: openaiMessages,
+      tools: tools?.length ? tools : undefined,
+      max_tokens: opts.maxTokens ?? 4096,
+      temperature: opts.temperature ?? 0,
+      stream: true,
+    }, { signal: opts.signal });
+
+    let currentToolCall: { id: string; name: string; arguments: string } | null = null;
+
+    for await (const chunk of stream) {
+      const delta = chunk.choices?.[0]?.delta;
+      if (!delta) continue;
+
+      // Text content
+      if (delta.content) {
+        yield { type: "text", text: delta.content };
+      }
+
+      // Tool calls
+      if (delta.tool_calls) {
+        for (const tc of delta.tool_calls) {
+          if (tc.id) {
+            // New tool call
+            if (currentToolCall) {
+              // Flush previous
+              // (OpenAI sends complete tool calls in one chunk usually)
+            }
+            currentToolCall = {
+              id: tc.id,
+              name: tc.function?.name ?? "",
+              arguments: tc.function?.arguments ?? "",
+            };
+            yield { type: "toolCall", id: tc.id, name: currentToolCall.name, arguments: currentToolCall.arguments };
+          } else if (tc.function?.arguments && currentToolCall) {
+            currentToolCall.arguments += tc.function.arguments;
+          }
+        }
+      }
+
+      // Usage (final chunk)
+      if (chunk.usage) {
+        yield {
+          type: "usage",
+          usage: {
+            input: chunk.usage.prompt_tokens,
+            output: chunk.usage.completion_tokens,
+            cacheRead: 0,
+            cacheWrite: 0,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+          },
+        };
+      }
+
+      // Finish
+      if (chunk.choices?.[0]?.finish_reason) {
+        yield { type: "stop", stopReason: chunk.choices[0].finish_reason };
+      }
+    }
+  }
+
+  return { name: "openai", complete };
+}
+
+// ─── Portkey (OpenAI-compatible proxy) ────────────────
+
+export function createPortkeyProvider(apiKey?: string, baseUrl?: string): Provider {
+  const client = new OpenAI({
+    apiKey: apiKey ?? process.env.PORTKEY_API_KEY,
+    baseURL: baseUrl ?? process.env.PORTKEY_BASE_URL ?? "https://api.portkey.ai/v1",
+  });
+
+  async function* complete(messages: Message[], opts: CompleteOptions): AsyncIterable<ProviderChunk> {
+    const openaiMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = messages
+      .filter((m) => m.role !== "toolResult")
+      .map((m) => {
+        const text = m.content
+          .filter((c) => c.type === "text")
+          .map((c) => (c as any).text)
+          .join("\n");
+
+        if (m.role === "system") return { role: "system", content: text };
+        if (m.role === "assistant") return { role: "assistant", content: text };
+        return { role: "user", content: text };
+      });
+
+    if (opts.systemPrompt && !messages.some((m) => m.role === "system")) {
+      openaiMessages.unshift({ role: "system", content: opts.systemPrompt });
+    }
+
+    const tools: OpenAI.Chat.Completions.ChatCompletionTool[] | undefined = opts.tools?.map((t) => ({
+      type: "function" as const,
+      function: {
+        name: t.name,
+        description: t.description,
+        parameters: t.parameters as Record<string, unknown>,
+      },
+    }));
+
+    const stream = await client.chat.completions.create({
+      model: opts.model,
+      messages: openaiMessages,
+      tools: tools?.length ? tools : undefined,
+      max_tokens: opts.maxTokens ?? 4096,
+      temperature: opts.temperature ?? 0,
+      stream: true,
+    }, { signal: opts.signal });
+
+    for await (const chunk of stream) {
+      const delta = chunk.choices?.[0]?.delta;
+      if (!delta) continue;
+
+      if (delta.content) {
+        yield { type: "text", text: delta.content };
+      }
+
+      if (delta.tool_calls) {
+        for (const tc of delta.tool_calls) {
+          if (tc.id) {
+            yield {
+              type: "toolCall",
+              id: tc.id,
+              name: tc.function?.name ?? "",
+              arguments: tc.function?.arguments ?? "",
+            };
+          }
+        }
+      }
+
+      if (chunk.usage) {
+        yield {
+          type: "usage",
+          usage: {
+            input: chunk.usage.prompt_tokens,
+            output: chunk.usage.completion_tokens,
+            cacheRead: 0,
+            cacheWrite: 0,
+            cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+          },
+        };
+      }
+
+      if (chunk.choices?.[0]?.finish_reason) {
+        yield { type: "stop", stopReason: chunk.choices[0].finish_reason };
+      }
+    }
+  }
+
+  return { name: "portkey", complete };
 }
 
 // ─── Google ───────────────────────────────────────────
 
-// Placeholder — implement when needed
 export function createGoogleProvider(apiKey?: string): Provider {
   const _key = apiKey ?? process.env.GOOGLE_API_KEY;
   return {
@@ -179,9 +354,43 @@ export class ProviderRegistry {
     return Array.from(this.providers.keys());
   }
 
-  /** Auto-detect available providers from environment */
+  /** Auto-detect available providers from environment and pi config */
   static autoDiscover(): ProviderRegistry {
     const registry = new ProviderRegistry();
+
+    // ─── Portkey (priority) — reads from pi's models.json ───
+    const portkeyConfig = ProviderRegistry.loadPortkeyConfig();
+    if (portkeyConfig) {
+      registry.register(createPortkeyProvider(portkeyConfig.apiKey, portkeyConfig.baseUrl));
+      for (const model of portkeyConfig.models) {
+        registry.registerModel({
+          id: model.id,
+          name: model.name ?? model.id,
+          provider: "portkey",
+          reasoning: false,
+          input: ["text"],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 200000,
+          maxTokens: 16384,
+          capabilities: { coding: 0.85, speed: 0.80, costEfficiency: 0.70 },
+        });
+      }
+    }
+
+    // Fallback: PORTKEY_API_KEY env var
+    if (!portkeyConfig && process.env.PORTKEY_API_KEY) {
+      registry.register(createPortkeyProvider());
+      registry.registerModel({
+        id: "gpt-4o",
+        name: "GPT-4o (via Portkey)",
+        provider: "portkey",
+        reasoning: false,
+        input: ["text"],
+        cost: { input: 2.50, output: 10, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 128000,
+        maxTokens: 16384,
+      });
+    }
 
     if (process.env.ANTHROPIC_API_KEY) {
       registry.register(createAnthropicProvider());
@@ -236,5 +445,28 @@ export class ProviderRegistry {
     }
 
     return registry;
+  }
+
+  /** Load Portkey configuration from pi's models.json */
+  private static loadPortkeyConfig(): { apiKey: string; baseUrl: string; models: Array<{ id: string; name?: string }> } | null {
+    try {
+      const configPath = join(homedir(), ".pi", "agent", "models.json");
+      if (!existsSync(configPath)) return null;
+
+      const raw = readFileSync(configPath, "utf-8");
+      const data = JSON.parse(raw);
+      const portkeyProvider = data?.providers?.portkey;
+      if (!portkeyProvider) return null;
+
+      return {
+        apiKey: portkeyProvider.apiKey,
+        baseUrl: portkeyProvider.baseUrl ?? "https://api.portkey.ai/v1",
+        models: (portkeyProvider.models ?? []).map((m: string | { id: string; name?: string }) =>
+          typeof m === "string" ? { id: m } : m
+        ),
+      };
+    } catch {
+      return null;
+    }
   }
 }
