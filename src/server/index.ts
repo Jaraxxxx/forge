@@ -17,7 +17,7 @@ import { homedir } from "os";
 import { fileURLToPath } from "url";
 
 import {
-  ProviderRegistry,
+  createOpenAIProvider,
   createAnthropicProvider,
 } from "../providers/registry.js";
 import { agentLoop, setProvider } from "../core/agent.js";
@@ -962,15 +962,19 @@ export function createApp(providerName?: string): express.Express {
       res.write(`data: ${JSON.stringify(data)}\n\n`);
     }
 
-    // Auto-discover provider — Portkey first
-    const registry = ProviderRegistry.autoDiscover();
-    const provider = registry.get("portkey") ?? registry.get("anthropic");
+    // Auto-discover provider
+    const hasOpenAI = process.env.FORGE_API_KEY || process.env.OPENAI_API_KEY;
+    const hasAnthropic = process.env.ANTHROPIC_API_KEY;
 
-    if (!provider) {
-      send({ type: "error", message: "No provider configured. Set PORTKEY_API_KEY or ANTHROPIC_API_KEY." });
+    if (!hasOpenAI && !hasAnthropic) {
+      send({ type: "error", message: "No API key. Set FORGE_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY." });
       res.end();
       return;
     }
+
+    const provider = hasOpenAI
+      ? createOpenAIProvider({ apiKey: hasOpenAI })
+      : createAnthropicProvider();
 
     try {
       // Add user message to history
@@ -996,8 +1000,10 @@ export function createApp(providerName?: string): express.Express {
       const historyLenBefore = session.history.length;
 
       // Run agent loop — tool calls/results forwarded via callbacks
+      const model = process.env.FORGE_MODEL ?? (hasOpenAI ? "gpt-4o" : "claude-sonnet-4-20250514");
       for await (const chunk of agentLoop(message, session.history, {
         provider,
+        model,
         systemPrompt: SYSTEM_PROMPT,
         tools: DEFAULT_TOOLS,
         signal: abortController.signal,

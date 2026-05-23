@@ -2,21 +2,22 @@
  * Forge — Unified CLI Entry Point
  *
  * Usage:
- *   forge              → interactive CLI mode
- *   forge "prompt"     → one-shot CLI mode
- *   forge web [port]   → start webapp server (default :4200)
+ *   FORGE_API_KEY="sk-..." forge                      → interactive CLI
+ *   FORGE_BASE_URL="https://api.portkey.ai/v1" \      → (optional) custom endpoint
+ *   FORGE_MODEL="claude-sonnet-4-20250514" forge       → (optional) model override
  *
- * Both CLI and Web use the exact same agentLoop core.
+ *   forge "fix the bug in auth.ts"                    → one-shot prompt
+ *   forge web [port]                                   → start webapp (default :4200)
+ *
+ * Zero config — detects FORGE_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY.
+ * Any OpenAI-compatible endpoint works (Portkey, Groq, Together, local proxy).
  */
 
 import * as readline from "readline";
 import {
   ProviderRegistry,
-  createAnthropicProvider,
   createOpenAIProvider,
-  createPortkeyProvider,
-  createGoogleProvider,
-  createOllamaProvider,
+  createAnthropicProvider,
 } from "./providers/registry.js";
 import { agentLoop, setProvider } from "./core/agent.js";
 import { DEFAULT_TOOLS } from "./tools/builtin.js";
@@ -56,29 +57,36 @@ function accent(text: string): string {
 // ─── CLI ──────────────────────────────────────────────
 
 async function runCLI(initialPrompt: string): Promise<void> {
-  const registry = ProviderRegistry.autoDiscover();
+  // Pick provider from env
+  const hasOpenAI = process.env.FORGE_API_KEY || process.env.OPENAI_API_KEY;
+  const hasAnthropic = process.env.ANTHROPIC_API_KEY;
 
-  // Provider priority: Portkey > Anthropic > OpenAI > Google
-  const provider = registry.get("portkey") ??
-    registry.get("anthropic") ??
-    registry.get("openai") ??
-    registry.get("google");
-
-  if (!provider) {
-    console.error("No provider found. Set PORTKEY_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY.");
-    console.error("Portkey config auto-loaded from ~/.pi/agent/models.json if available.");
+  if (!hasOpenAI && !hasAnthropic) {
+    console.error("No API key found.");
+    console.error("");
+    console.error("Set one of:");
+    console.error("  FORGE_API_KEY=sk-...          (any OpenAI-compatible key)");
+    console.error("  FORGE_BASE_URL=https://...    (optional, custom endpoint)");
+    console.error("  OPENAI_API_KEY=sk-...         (OpenAI fallback)");
+    console.error("  ANTHROPIC_API_KEY=sk-ant-...  (Anthropic fallback)");
+    console.error("");
     process.exit(1);
   }
 
+  const provider = hasOpenAI
+    ? createOpenAIProvider({ apiKey: hasOpenAI })
+    : createAnthropicProvider();
   setProvider(provider);
+
+  const model = process.env.FORGE_MODEL ?? (hasOpenAI ? "gpt-4o" : "claude-sonnet-4-20250514");
 
   // ─── Non-interactive (one-shot) ────────────────────
   if (initialPrompt) {
-    // Non-interactive: one-shot
     const history: Message[] = [];
     console.log("");
     for await (const chunk of agentLoop(initialPrompt, history, {
       provider,
+      model,
       systemPrompt: SYSTEM_PROMPT,
       tools: DEFAULT_TOOLS,
     })) {
@@ -98,10 +106,12 @@ async function runCLI(initialPrompt: string): Promise<void> {
 
   console.log("");
   console.log(accent("  ⚒  Forge — AI Coding Agent"));
-  console.log(dim(`  Provider: ${provider.name}`));
-  const models = registry.getAllModels().filter((m) => m.provider === provider.name);
-  console.log(dim(`  Models: ${models.length} available via Portkey`));
-  console.log(dim(`  Tools: ${DEFAULT_TOOLS.map((t) => t.name).join(", ")}`));
+  console.log(dim(`  Provider: ${hasOpenAI ? "openai-compatible" : "anthropic"}`));
+  console.log(dim(`  Model:   ${model}`));
+  console.log(dim(`  Tools:   ${DEFAULT_TOOLS.map((t) => t.name).join(", ")}`));
+  if (process.env.FORGE_BASE_URL) {
+    console.log(dim(`  Endpoint: ${process.env.FORGE_BASE_URL}`));
+  }
   console.log("");
 
   async function prompt(): Promise<void> {
@@ -122,6 +132,7 @@ async function runCLI(initialPrompt: string): Promise<void> {
       try {
         for await (const chunk of agentLoop(input, history, {
           provider,
+          model,
           systemPrompt: SYSTEM_PROMPT,
           tools: DEFAULT_TOOLS,
         })) {
@@ -150,25 +161,6 @@ async function main(): Promise<void> {
     const port = parseInt(args[1] || process.env.FORGE_PORT || "4200", 10);
     startServer(port);
     return;
-  }
-
-  // "forge models" — list available models
-  if (args[0] === "models") {
-    const registry = ProviderRegistry.autoDiscover();
-    const models = registry.getAllModels();
-    if (models.length === 0) {
-      console.log("No models available. Configure a provider first.");
-      process.exit(1);
-    }
-    console.log("");
-    console.log(accent("Available Models:"));
-    console.log("");
-    for (const m of models) {
-      console.log(`  ${accent(m.provider + "/" + m.id)}`);
-      console.log(`  ${dim("  " + (m.name ?? m.id))}`);
-    }
-    console.log("");
-    process.exit(0);
   }
 
   // "forge" or "forge <prompt>" — CLI mode

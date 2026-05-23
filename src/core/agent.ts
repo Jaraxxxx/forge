@@ -117,11 +117,7 @@ export async function* agentLoop(
     let stopReason = "stop";
 
     // Stream from the provider
-    const modelId = options.model ??
-      (provider.name === "portkey" ? "claude-4-sonnet/2025-01-01-preview" :
-       provider.name === "anthropic" ? "claude-sonnet-4-20250514" :
-       provider.name === "openai" ? "gpt-4o" :
-       "gpt-4o");
+    const modelId = options.model ?? "gpt-4o";
     const stream = provider.complete(messages, {
       model: modelId,
       tools: tools.length > 0 ? tools : undefined,
