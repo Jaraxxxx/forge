@@ -361,10 +361,10 @@ const MODELS = {
 };
 
 // ─── Helpers ───────────────────────────────────────────
-const $=id=>document.getElementById(id);
+const _e=id=>document.getElementById(id);
 const esc=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 function xt(c){return(c||[]).filter(x=>x.type==='text').map(x=>x.text).join('\\n')}
-function sb(){const m=$('messages');requestAnimationFrame(()=>m.scrollTop=m.scrollHeight)}
+function sb(){const m=_e('messages');requestAnimationFrame(()=>m.scrollTop=m.scrollHeight)}
 
 function md(t){
   if(!t)return'';
@@ -379,17 +379,17 @@ function md(t){
 
 // ─── Model Picker ─────────────────────────────────────
 function updateModelDisplay(){
-  const m = MODELS[st.model] || {name:st.model,provider:'?',icon:'⚙'};
-  $('currentModelName').textContent = m.name;
-  $('currentModelProvider').textContent = m.provider;
-  $('sProvider').textContent = m.provider;
+  const m = MODELS[st.model] || {name:st.model,provider:'?',icon:'\u2699'};
+  _e('currentModelName').textContent = m.name;
+  _e('currentModelProvider').textContent = m.provider;
+  _e('sProvider').textContent = m.provider;
 }
 function toggleModelDropdown(){
-  const dd = $('modelDropdown');
-  const arr = $('modelArrow');
-  const vis = dd.classList.toggle('visible');
-  arr.classList.toggle('open', vis);
-  if(vis) renderModelDropdown();
+  const dd = _e('modelDropdown');
+  const arr = _e('modelArrow');
+  const vis = !dd.classList.contains('visible');
+  if(vis){ dd.classList.add('visible'); arr.classList.add('open'); renderModelDropdown(); }
+  else { dd.classList.remove('visible'); arr.classList.remove('open'); }
 }
 function renderModelDropdown(){
   const groups = {};
@@ -404,28 +404,21 @@ function renderModelDropdown(){
     for(const m of models){
       const sel = m.id === st.model ? ' selected' : '';
       const cc = providerClass[provider] || '';
-      html += '<div class="model-card'+sel+'" data-id="'+m.id+'" onclick="pickModel(\''+m.id+'\')"><div class="mc-badge '+cc+'">'+m.icon+'</div><div class="mc-info"><div class="mc-name">'+m.name+'</div><div class="mc-desc">'+m.desc+'</div></div><div class="mc-check">✓</div></div>';
+      html += '<div class="model-card'+sel+'" data-model="'+m.id+'"><div class="mc-badge '+cc+'">'+m.icon+'</div><div class="mc-info"><div class="mc-name">'+m.name+'</div><div class="mc-desc">'+m.desc+'</div></div><div class="mc-check">\u2713</div></div>';
     }
   }
-  $('modelDropdown').innerHTML = html;
+  _e('modelDropdown').innerHTML = html;
 }
-function pickModel(id){
-  st.model = id;
-  updateModelDisplay();
-  $('modelDropdown').classList.remove('visible');
-  $('modelArrow').classList.remove('open');
-  updateStatusBar();
-}
-document.addEventListener('click', e => {
-  if(!e.target.closest('.model-selector')){
-    $('modelDropdown').classList.remove('visible');
-    $('modelArrow').classList.remove('open');
-  }
+_e('modelDropdown').addEventListener('click', function(e){
+  const card = e.target.closest('.model-card');
+  if(!card) return;
+  const id = card.getAttribute('data-model');
+  if(id) pickModel(id);
 });
 
 // ─── Sidebar ──────────────────────────────────────────
 function toggleSidebar(){
-  const sb = $('sidebar');
+  const sb = _e('sidebar');
   if(window.innerWidth <= 768) sb.classList.toggle('open');
   else sb.classList.toggle('collapsed');
 }
@@ -433,15 +426,21 @@ async function refreshSessions(){
   try{
     const resp = await fetch('/api/sessions');
     const sessions = await resp.json();
-    const list = $('sessionsList');
+    const list = _e('sessionsList');
     list.innerHTML = sessions.map(s => {
       const d = new Date(s.updatedAt), t = d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
       const mn = (MODELS[s.model]||{}).name||s.model||'';
       const active = s.id === st.sid ? ' active' : '';
-      return '<div class="session-item'+active+'" onclick="loadSession(\''+s.id+'\')"><div class="stitle">'+(s.cwd?.split('/').pop()||'Session')+'</div><div class="smodel">'+mn+'</div><div class="sdate">'+t+'</div></div>';
+      return '<div class="session-item'+active+'" data-sid="'+s.id+'"><div class="stitle">'+(s.cwd?.split('/').pop()||'Session')+'</div><div class="smodel">'+mn+'</div><div class="sdate">'+t+'</div></div>';
     }).join('');
   }catch(e){}
 }
+_e('sessionsList').addEventListener('click', function(e){
+  const item = e.target.closest('.session-item');
+  if(!item) return;
+  const id = item.getAttribute('data-sid');
+  if(id) loadSession(id);
+});
 async function loadSession(id){
   try{
     const resp = await fetch('/api/sessions/'+id);
@@ -449,8 +448,8 @@ async function loadSession(id){
     st.sid = s.id; st.turns = s.turnCount||0; st.tIn = s.totalTokens?.in||0; st.tOut = s.totalTokens?.out||0;
     if(s.model) st.model = s.model;
     updateModelDisplay(); updateStatusBar();
-    const el = $('messages');
-    const w = $('welcomeScreen'); if(w) w.style.display='none';
+    const el = _e('messages');
+    const w = _e('welcomeScreen'); if(w) w.style.display='none';
     el.innerHTML = '';
     if(s.history?.length){
       for(const msg of s.history){
@@ -459,16 +458,35 @@ async function loadSession(id){
         else if(msg.role==='toolResult') addToolRes(msg);
       }
     }else{
-      el.innerHTML = '<div class="welcome" id="welcomeScreen"><div class="welcome-icon">⚒</div><div class="welcome-title">Forge — AI Coding Agent</div><div class="welcome-subtitle">Continue this session or start a new one.</div></div>';
+      showWelcomeScreen(el, 'Continue this session or start a new one.');
     }
     refreshSessions(); sb();
   }catch(e){console.error(e)}
 }
+function showWelcomeScreen(el, subtitle){
+  el.innerHTML = '<div class="welcome" id="welcomeScreen">'+
+    '<div class="welcome-icon">\u2692</div>'+
+    '<div class="welcome-title">Forge \u2014 AI Coding Agent</div>'+
+    '<div class="welcome-subtitle">'+subtitle+'</div>'+
+    '<div class="welcome-cards">'+
+    '<div class="welcome-card" data-action="focus"><div class="welcome-card-icon">\uD83D\uDCAC</div><div class="welcome-card-title">Ask anything</div><div class="welcome-card-desc">Read files, edit code, run commands, build entire projects.</div></div>'+
+    '<div class="welcome-card" data-action="model"><div class="welcome-card-icon">\uD83D\uDD04</div><div class="welcome-card-title">Choose a model</div><div class="welcome-card-desc">18 models across 7 providers. Switch anytime mid-session.</div></div>'+
+    '<div class="welcome-card" data-action="sessions"><div class="welcome-card-icon">\uD83D\uDCC2</div><div class="welcome-card-title">Pick up where you left</div><div class="welcome-card-desc">All sessions saved. Click sidebar to resume any conversation.</div></div>'+
+    '</div></div>';
+}
+_e('messages').addEventListener('click', function(e){
+  var card = e.target.closest('[data-action]');
+  if(!card) return;
+  var action = card.getAttribute('data-action');
+  if(action === 'focus') _e('input').focus();
+  else if(action === 'model') toggleModelDropdown();
+  else if(action === 'sessions'){ _e('sidebar').classList.toggle('collapsed'); refreshSessions(); }
+});
 async function newSession(){
   st.sid = null; st.turns = 0; st.tIn = 0; st.tOut = 0; st.lat = null; st.cost = 0;
   updateModelDisplay(); updateStatusBar();
-  $('messages').innerHTML = '<div class="welcome" id="welcomeScreen"><div class="welcome-icon">⚒</div><div class="welcome-title">Forge — AI Coding Agent</div><div class="welcome-subtitle">Model-agnostic. Any API key. Any endpoint. Just start chatting — or choose a model above.</div><div class="welcome-cards"><div class="welcome-card" onclick="document.getElementById(\'input\').focus()"><div class="welcome-card-icon">💬</div><div class="welcome-card-title">Ask anything</div><div class="welcome-card-desc">Read files, edit code, run commands, build entire projects.</div></div><div class="welcome-card" onclick="toggleModelDropdown()"><div class="welcome-card-icon">🔄</div><div class="welcome-card-title">Choose a model</div><div class="welcome-card-desc">18 models across 7 providers. Switch anytime mid-session.</div></div><div class="welcome-card" onclick="document.getElementById(\'sidebar\').classList.toggle(\'collapsed\');refreshSessions()"><div class="welcome-card-icon">📂</div><div class="welcome-card-title">Pick up where you left</div><div class="welcome-card-desc">All sessions saved. Click sidebar to resume any conversation.</div></div></div></div>';
-  $('input').focus();
+  showWelcomeScreen(_e('messages'), 'Model-agnostic. Any API key. Any endpoint. Just start chatting \u2014 or choose a model above.');
+  _e('input').focus();
 }
 
 // ─── Messages ─────────────────────────────────────────
@@ -476,8 +494,8 @@ function addUserMsg(msg){
   const t = xt(msg.content);
   const d = document.createElement('div'); d.className='message user';
   d.innerHTML = '<div class="bubble">'+esc(t)+'</div>';
-  $('messages').appendChild(d);
-  const w = $('welcomeScreen'); if(w) w.style.display='none';
+  _e('messages').appendChild(d);
+  const w = _e('welcomeScreen'); if(w) w.style.display='none';
   sb();
 }
 function addAsstMsg(msg){
@@ -485,18 +503,22 @@ function addAsstMsg(msg){
   const tcs = (msg.content||[]).filter(c=>c.type==='toolCall');
   const d = document.createElement('div'); d.className='message assistant';
   d.innerHTML = '<div class="avatar">F</div><div class="content">'+md(t)+'</div>';
-  $('messages').appendChild(d);
+  _e('messages').appendChild(d);
   for(const tc of tcs) addToolCard(tc.id, tc.name, tc.arguments, false);
   sb();
 }
 function addToolCard(id, name, args, collapsed){
   const d = document.createElement('div'); d.className='message assistant';
   const a = typeof args==='object'?JSON.stringify(args).slice(0,120):String(args||'').slice(0,120);
-  d.innerHTML = '<div class="avatar">🔧</div><div class="content"><div class="tool-card'+(collapsed?'':' expanded')+'" id="tool-'+id+'"><div class="tool-card-header" onclick="this.parentElement.classList.toggle(\'expanded\')"><span class="tool-name">'+esc(name)+'</span><span class="tool-args">'+esc(a)+'</span><span class="tool-status running">running</span></div><div class="tool-card-body">Running...</div></div></div></div>';
-  $('messages').appendChild(d); sb();
+  d.innerHTML = '<div class="avatar">\uD83D\uDD27</div><div class="content"><div class="tool-card'+(collapsed?'':' expanded')+'" id="tool-'+id+'"><div class="tool-card-header"><span class="tool-name">'+esc(name)+'</span><span class="tool-args">'+esc(a)+'</span><span class="tool-status running">running</span></div><div class="tool-card-body">Running...</div></div></div></div>';
+  _e('messages').appendChild(d);
+  d.querySelector('.tool-card-header').addEventListener('click', function(){
+    d.querySelector('.tool-card').classList.toggle('expanded');
+  });
+  sb();
 }
 function updToolRes(id, content, isErr){
-  const el = $('tool-'+id); if(!el) return;
+  const el = _e('tool-'+id); if(!el) return;
   const b = el.querySelector('.tool-card-body'), s = el.querySelector('.tool-status');
   if(b) b.textContent = content.slice(0,5000);
   if(s){s.textContent = isErr?'error':'done';s.className='tool-status '+(isErr?'error':'done');}
@@ -509,24 +531,24 @@ function addToolRes(msg){
 function startStream(){
   const d = document.createElement('div'); d.className='message assistant'; d.id='stream-msg';
   d.innerHTML = '<div class="avatar">F</div><div class="content"><span class="stream-cursor"></span></div>';
-  $('messages').appendChild(d);
-  const w = $('welcomeScreen'); if(w) w.style.display='none';
+  _e('messages').appendChild(d);
+  const w = _e('welcomeScreen'); if(w) w.style.display='none';
   sb();
   return d.querySelector('.content');
 }
 
 async function sendMessage(){
-  const inp = $('input'), txt = inp.value.trim();
+  const inp = _e('input'), txt = inp.value.trim();
   if(!txt || st.streaming) return;
-  const w = $('welcomeScreen'); if(w) w.style.display='none';
+  const w = _e('welcomeScreen'); if(w) w.style.display='none';
   addUserMsg({role:'user',content:[{type:'text',text:txt}]});
   inp.value=''; autoResize(inp);
 
   const bubble = startStream(), cursor = bubble.querySelector('.stream-cursor');
   st.streaming = true; st.abort = new AbortController();
   const t0 = performance.now();
-  $('sendBtn').style.display = 'none';
-  const stop = document.createElement('button'); stop.className='stop-btn'; stop.textContent='■'; stop.onclick=stopStream;$('sendBtn').parentNode.appendChild(stop);
+  _e('sendBtn').style.display = 'none';
+  const stop = document.createElement('button'); stop.className='stop-btn'; stop.textContent='■'; stop.onclick=stopStream;_e('sendBtn').parentNode.appendChild(stop);
   setStatus('yellow','streaming');
 
   let full = ''; const tcIds = new Set();
@@ -558,30 +580,30 @@ async function sendMessage(){
     if(e.name!=='AbortError') bubble.innerHTML += '<div style="color:var(--red);margin-top:8px;font-size:12px">Error: '+esc(e.message)+'</div>';
   }finally{
     cursor?.remove(); st.streaming = false; st.abort = null;
-    stop?.remove(); $('sendBtn').style.display='';
-    setStatus('green','idle'); updateStatusBar(); sb(); $('input').focus();
+    stop?.remove(); _e('sendBtn').style.display='';
+    setStatus('green','idle'); updateStatusBar(); sb(); _e('input').focus();
   }
 }
 function stopStream(){if(st.abort)st.abort.abort()}
 
 // ─── Status Bar ───────────────────────────────────────
 function updateStatusBar(){
-  $('sTokens').textContent = (st.tIn||0).toLocaleString()+' / '+(st.tOut||0).toLocaleString();
-  $('turnCount').textContent = st.turns;
-  $('sProvider').textContent = (MODELS[st.model]||{}).provider || PROVIDER;
+  _e('sTokens').textContent = (st.tIn||0).toLocaleString()+' / '+(st.tOut||0).toLocaleString();
+  _e('turnCount').textContent = st.turns;
+  _e('sProvider').textContent = (MODELS[st.model]||{}).provider || PROVIDER;
 
   const ctx = Math.min(100,Math.round(((st.tIn||0)/180000)*100));
-  $('sCtxPct').textContent = ctx+'%';
-  const f = $('sCtxFill'); f.style.width = ctx+'%';
+  _e('sCtxPct').textContent = ctx+'%';
+  const f = _e('sCtxFill'); f.style.width = ctx+'%';
   f.className = 'ctx-fill '+(ctx>80?'d':ctx>60?'w':'s');
 
   const cost = ((st.tIn||0)*3/1e6+(st.tOut||0)*15/1e6)*1.1;
   st.cost = cost;
-  $('sCost').textContent = '$'+cost.toFixed(cost<0.01?4:2);
-  if(st.lat) $('sLatency').textContent = (st.lat/1000).toFixed(1)+'s';
+  _e('sCost').textContent = '$'+cost.toFixed(cost<0.01?4:2);
+  if(st.lat) _e('sLatency').textContent = (st.lat/1000).toFixed(1)+'s';
 }
 function setStatus(state,text){
-  $('statusPill').innerHTML = '<span class="dot '+state+'"></span> '+text;
+  _e('statusPill').innerHTML = '<span class="dot '+state+'"></span> '+text;
 }
 
 // ─── Input ────────────────────────────────────────────
@@ -591,7 +613,7 @@ function handleKeydown(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();se
 // ─── Init ─────────────────────────────────────────────
 updateModelDisplay(); updateStatusBar(); refreshSessions();
 setInterval(refreshSessions,30000);
-$('input').focus();
+_e('input').focus();
 (async()=>{
   try{const r=await(await fetch('/api/sessions')).json();if(r.length)loadSession(r[0].id)}catch(e){}
 })();

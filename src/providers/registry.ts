@@ -51,7 +51,7 @@ export function createOpenAIProvider(opts?: { apiKey?: string; baseURL?: string 
       model: opts.model,
       messages: openaiMessages,
       tools: tools?.length ? tools : undefined,
-      temperature: opts.temperature ?? 0,
+      temperature: undefined,  // skip — some models (DeepSeek, etc.) reject temperature=0
       stream: true,
     }, { signal: opts.signal });
 
