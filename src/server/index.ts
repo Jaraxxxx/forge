@@ -949,55 +949,48 @@ export function createApp(providerName?: string): express.Express {
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
     res.setHeader("X-Accel-Buffering", "no");
+    res.socket?.setNoDelay(true);
     res.flushHeaders();
 
     const abortController = new AbortController();
 
-    // Handle client disconnect
+    // Handle client disconnect (ignoring immediate flushHeaders close)
+    let connected = false;
     req.on("close", () => {
-      abortController.abort();
+      if (connected) abortController.abort();
     });
+
+    // Wait for connection to stabilize before marking connected
+    await new Promise((r) => setTimeout(r, 200));
+    connected = true;
 
     function send(data: object): void {
       res.write(`data: ${JSON.stringify(data)}\n\n`);
+      // Force flush — Express may buffer SSE writes
+      if (typeof (res as any).flush === "function") (res as any).flush();
     }
 
     // Auto-discover provider
-    const hasOpenAI = process.env.FORGE_API_KEY || process.env.OPENAI_API_KEY;
+    const key = process.env.FORGE_API_KEY || process.env.PORTKEY_API_KEY || process.env.OPENAI_API_KEY;
+    const baseUrl = process.env.FORGE_BASE_URL
+      || (process.env.PORTKEY_API_KEY ? "https://api.portkey.ai/v1" : undefined)
+      || process.env.PORTKEY_BASE_URL;
+    const hasOpenAI = key;
     const hasAnthropic = process.env.ANTHROPIC_API_KEY;
 
     if (!hasOpenAI && !hasAnthropic) {
-      send({ type: "error", message: "No API key. Set FORGE_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY." });
+      send({ type: "error", message: "No API key. Set FORGE_API_KEY, PORTKEY_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY." });
       res.end();
       return;
     }
 
     const provider = hasOpenAI
-      ? createOpenAIProvider({ apiKey: hasOpenAI })
+      ? createOpenAIProvider({ apiKey: hasOpenAI as string, baseURL: baseUrl })
       : createAnthropicProvider();
 
     try {
-      // Add user message to history
-      const userMsg: Message = {
-        role: "user",
-        content: [{ type: "text", text: message }],
-        timestamp: Date.now(),
-      };
-      session.history.push(userMsg);
-      session.entries.push({
-        id: randomUUID(),
-        type: "message",
-        parentId: session.leafId,
-        message: userMsg,
-        timestamp: Date.now(),
-      });
-      session.leafId = session.entries[session.entries.length - 1].id;
-
-      // Track tool calls for results
-      const pendingToolCalls = new Map<string, string>();
-
-      // Snapshot of history length before this turn
-      const historyLenBefore = session.history.length;
+      // agentLoop adds the user message internally, so we pass history as-is.
+      // Track entry for session persistence after the turn completes.
 
       // Run agent loop — tool calls/results forwarded via callbacks
       const model = process.env.FORGE_MODEL ?? (hasOpenAI ? "gpt-4o" : "claude-sonnet-4-20250514");

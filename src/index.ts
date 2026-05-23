@@ -57,24 +57,28 @@ function accent(text: string): string {
 // ─── CLI ──────────────────────────────────────────────
 
 async function runCLI(initialPrompt: string): Promise<void> {
-  // Pick provider from env
-  const hasOpenAI = process.env.FORGE_API_KEY || process.env.OPENAI_API_KEY;
+  // Pick provider from env (PORTKEY_API_KEY auto-detected as FORGE_API_KEY)
+  const key = process.env.FORGE_API_KEY || process.env.PORTKEY_API_KEY || process.env.OPENAI_API_KEY;
+  const baseUrl = process.env.FORGE_BASE_URL
+    || (process.env.PORTKEY_API_KEY ? "https://api.portkey.ai/v1" : undefined)
+    || process.env.PORTKEY_BASE_URL;
+  const hasOpenAI = key;
   const hasAnthropic = process.env.ANTHROPIC_API_KEY;
 
   if (!hasOpenAI && !hasAnthropic) {
     console.error("No API key found.");
     console.error("");
     console.error("Set one of:");
-    console.error("  FORGE_API_KEY=sk-...          (any OpenAI-compatible key)");
-    console.error("  FORGE_BASE_URL=https://...    (optional, custom endpoint)");
-    console.error("  OPENAI_API_KEY=sk-...         (OpenAI fallback)");
-    console.error("  ANTHROPIC_API_KEY=sk-ant-...  (Anthropic fallback)");
+    console.error("  FORGE_API_KEY=sk-...       (any OpenAI-compatible key)");
+    console.error("  PORTKEY_API_KEY=...        (Portkey autodetected)");
+    console.error("  FORGE_BASE_URL=https://... (optional, custom endpoint)");
+    console.error("  ANTHROPIC_API_KEY=sk-ant-..(Anthropic fallback)");
     console.error("");
     process.exit(1);
   }
 
   const provider = hasOpenAI
-    ? createOpenAIProvider({ apiKey: hasOpenAI })
+    ? createOpenAIProvider({ apiKey: hasOpenAI as string, baseURL: baseUrl })
     : createAnthropicProvider();
   setProvider(provider);
 
